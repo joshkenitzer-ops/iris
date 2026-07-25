@@ -12,7 +12,7 @@ Formerly Hermes. Renamed 2026-07-21 after a naming collision with commercial "He
 
 Iris is being built as an **agentic harness**, not a traditional application. There is no pipeline of services calling a model at fixed points. There is a specification that functions as pinned context, a set of deterministic tools the model must invoke, and a model operating under both.
 
-That makes the spec load-bearing code rather than documentation. It is versioned, diffed, and reviewed like any other source file.
+That makes the spec the source of truth rather than documentation. It is versioned, diffed, and reviewed like any other source file.
 
 | File | Purpose |
 | --- | --- |
