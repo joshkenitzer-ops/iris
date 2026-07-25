@@ -1,0 +1,379 @@
+"""
+FastAPI entry point.
+
+Run with: uvicorn app.main:app --reload
+Requires: pip install -r requirements.txt, ANTHROPIC_API_KEY set,
+CLERK_ISSUER set (see app/clerk_auth.py). Optional: CLERK_AUTHORIZED_PARTIES,
+ALLOWED_ORIGINS (comma-separated; unset means no browser origin is
+allowed, not a wildcard).
+
+T-9.10 (authentication): get_current_user_id() verifies a real Clerk
+session token (app.clerk_auth) rather than trusting a client-supplied
+header. Nothing client-supplied is ever treated as identity; the
+verified `sub` claim from a signature-checked, non-expired,
+correct-issuer JWT is the only source of user_id anywhere in this
+file. Everything downstream, session isolation (T-9.12), the profile
+file, already receives a verified user_id from this function; that
+was true even in the old header-stub version, which is why swapping
+the implementation was a one-function change, not a redesign.
+
+Also hardened here per the same pass: CORS is locked to explicit
+origins (empty by default, never "*"), and unhandled exceptions return
+a generic 500 with no exception content, so nothing internal (a stack
+trace, an accidental secret in an error message) reaches a client.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import threading
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+import app.tools  # noqa: F401  (import for its decorator side effects; do not remove)
+from app.claude_client import ToolLoopExhausted, run_turn
+from app.clerk_auth import ClerkAuthError, get_verifier
+from app.config import (
+    CHAT_RATE_LIMIT_CALLS,
+    CHAT_RATE_LIMIT_WINDOW_SECONDS,
+    MAX_MESSAGE_CHARS,
+    MAX_TRANSCRIPT_MESSAGES,
+)
+from app.enforcement import registry
+from app.gates import (
+    GateBlocked,
+    require_fit_check_completed,
+    require_gap_not_silently_removed,
+    require_no_open_criticals,
+    require_phase1_disposition,
+    require_registry_populated,
+)
+from app.session import Phase, Session, SessionNotFoundError, store
+from app.spec_loader import load_spec_text
+
+SPEC_PATH = Path(__file__).resolve().parent.parent / "docs" / "iris-spec.md"
+
+logger = logging.getLogger("iris")
+
+# Docs endpoints are OFF unless explicitly enabled. FastAPI serves
+# /docs, /redoc, and /openapi.json publicly by default, which on a
+# public host hands any anonymous visitor a complete interactive map of
+# every route, schema, and field, plus a precise target list. Set
+# IRIS_ENABLE_DOCS=true locally when you want them (pre-deploy review
+# 2026-07-25, item 3).
+_DOCS_ENABLED = os.environ.get("IRIS_ENABLE_DOCS", "").lower() in {"1", "true", "yes"}
+
+# N3: the spec is read once at startup, not re-read from disk on every
+# chat request.
+_spec_cache: Dict[str, str] = {}
+
+
+def _get_spec_text() -> str:
+    if "text" not in _spec_cache:
+        _spec_cache["text"] = load_spec_text(SPEC_PATH)
+    return _spec_cache["text"]
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """N4: /chat reads the spec from disk. If docs/iris-spec.md is
+    missing from the deployed tree, fail loudly at boot rather than
+    with a 500 on the first user request."""
+    if not SPEC_PATH.is_file():
+        raise RuntimeError(
+            f"Spec file not found at {SPEC_PATH}. docs/iris-spec.md must be "
+            "committed and present in the deployed tree."
+        )
+    _get_spec_text()
+    yield
+
+
+app = FastAPI(
+    lifespan=_lifespan,
+    title="Iris Harness",
+    version="0.1.0",
+    debug=False,
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
+)
+
+
+class _RateLimiter:
+    """B4: a per-user rolling-window cap on the endpoint that spends
+    money. In-memory and per-instance, which matches the single-instance
+    deploy; a shared store is the V2 upgrade alongside session storage.
+
+    This is not the usage-accounting feature that was deferred. It is a
+    ceiling, so that one leaked token, a runaway client retry loop, or
+    an accidental very large paste cannot run up an unbounded bill."""
+
+    def __init__(self, max_calls: int, window_seconds: int) -> None:
+        self._max = max_calls
+        self._window = window_seconds
+        self._hits: Dict[str, List[float]] = {}
+        self._lock = threading.Lock()
+
+    def check(self, user_id: str) -> None:
+        now = time.monotonic()
+        with self._lock:
+            recent = [t for t in self._hits.get(user_id, []) if now - t < self._window]
+            if len(recent) >= self._max:
+                retry_after = int(self._window - (now - recent[0])) + 1
+                raise HTTPException(
+                    status_code=429,
+                    detail="Rate limit exceeded. Try again shortly.",
+                    headers={"Retry-After": str(retry_after)},
+                )
+            recent.append(now)
+            self._hits[user_id] = recent
+
+
+_chat_rate_limiter = _RateLimiter(CHAT_RATE_LIMIT_CALLS, CHAT_RATE_LIMIT_WINDOW_SECONDS)
+
+_allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,  # empty = no browser origin is allowed until ALLOWED_ORIGINS is set
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(Exception)
+async def _no_internals_leak(request: Request, exc: Exception) -> JSONResponse:
+    """Anything not already turned into an HTTPException lands here.
+    Logged in full server-side for debugging; the client gets nothing
+    beyond the fact that something went wrong, since a stack trace can
+    leak file paths, query text, or (in the worst case) something like
+    an API key if it ever ended up in a variable being repr'd."""
+    logger.exception("Unhandled exception in %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
+
+@app.get("/health")
+def health() -> Dict[str, str]:
+    """Deliberately unauthenticated: Render's (or any host's) health
+    checker has no Clerk token and shouldn't need one just to confirm
+    the process is up. Deliberately minimal: no version string, no
+    build info, nothing an unauthenticated caller shouldn't see."""
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Authentication, T-9.10. See module docstring and app/clerk_auth.py.
+# ---------------------------------------------------------------------------
+
+
+def get_current_user_id(authorization: str = Header(..., alias="Authorization")) -> str:
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(status_code=401, detail="Authorization header must be 'Bearer <token>'.")
+
+    try:
+        verifier = get_verifier()
+    except RuntimeError as exc:
+        logger.error("Auth misconfigured: %s", exc)
+        raise HTTPException(status_code=500, detail="Auth is not configured on this server.") from None
+
+    try:
+        return verifier.verify(token)
+    except ClerkAuthError as exc:
+        logger.info("Rejected session token: %s", exc)
+        raise HTTPException(status_code=401, detail="Invalid or expired session token.") from None
+
+
+# ---------------------------------------------------------------------------
+# Session lifecycle
+# ---------------------------------------------------------------------------
+
+
+def _get_session(user_id: str, session_id: str) -> Session:
+    try:
+        return store.get(user_id, session_id)
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail="Session not found.") from None
+
+
+@app.post("/sessions")
+def create_session(user_id: str = Depends(get_current_user_id)) -> Dict[str, str]:
+    session = store.create(user_id)
+    return {"session_id": session.session_id, "phase": session.phase.name}
+
+
+@app.delete("/sessions/{session_id}")
+def logout(session_id: str, user_id: str = Depends(get_current_user_id)) -> Dict[str, str]:
+    """T-9.11: session-scoped data store. Discards this session's
+    registry, term lists, findings, and preferences. No persistence
+    beyond this call; the profile export (T-2.14) is the user's own
+    copy to carry forward, not a server-side backup."""
+    try:
+        store.delete(user_id, session_id)
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail="Session not found.") from None
+    return {"status": "logged_out", "session_id": session_id}
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: str, user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    session = _get_session(user_id, session_id)
+    return {
+        "session_id": session.session_id,
+        "phase": session.phase.name,
+        "active_fact_count": len(session.active_facts()),
+        "open_critical_count": len(session.open_criticals()),
+    }
+
+
+class AdvancePhaseRequest(BaseModel):
+    target_phase: str  # matches a Phase enum name, e.g. "MASTER_BUILD"
+
+
+@app.post("/sessions/{session_id}/advance-phase")
+def advance_phase(
+    session_id: str,
+    body: AdvancePhaseRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """The gate enforcement point. Every GATE that guards a phase
+    transition is checked here, server-side, regardless of what any
+    prior model turn claimed. See app/gates.py's module docstring."""
+    session = _get_session(user_id, session_id)
+
+    try:
+        target = Phase[body.target_phase]
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Unknown phase: {body.target_phase}") from None
+
+    try:
+        if target == Phase.MASTER_BUILD:
+            require_phase1_disposition(session)
+        if target in (Phase.FIT_CHECK, Phase.TAILORING):
+            require_registry_populated(session)
+        if target == Phase.TAILORING:
+            require_fit_check_completed(session)
+        if target == Phase.FINAL_REVIEW:
+            # Phase 8 is checked once at its own boundary going OUT
+            # (delivery), not coming in; require_no_open_criticals is
+            # called from the deliver endpoint below instead.
+            pass
+    except GateBlocked as exc:
+        raise HTTPException(status_code=409, detail={"gate_id": exc.gate_id, "message": exc.message}) from None
+
+    session.phase = target
+    store.save(session)
+    return {"session_id": session.session_id, "phase": session.phase.name}
+
+
+class DeliverRequest(BaseModel):
+    final_text: Optional[str] = None  # T-7.8: the rendered resume/cover-letter text, when checking gap disclosure
+
+
+@app.post("/sessions/{session_id}/deliver")
+def deliver(
+    session_id: str,
+    body: DeliverRequest = DeliverRequest(),
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """T-8.18: the actual delivery gate. Nothing before this point
+    blocks on open Criticals; this is where it matters. When
+    body.final_text is supplied, also runs T-7.8: a Fit Check gap
+    that no longer appears in the final text, with no recorded
+    acknowledgment, blocks delivery the same way an open Critical
+    does. Omitting final_text skips that check rather than failing
+    it, so existing callers that don't send it are unaffected."""
+    session = _get_session(user_id, session_id)
+    try:
+        require_no_open_criticals(session)
+        if body.final_text is not None:
+            require_gap_not_silently_removed(session, body.final_text)
+    except GateBlocked as exc:
+        raise HTTPException(status_code=409, detail={"gate_id": exc.gate_id, "message": exc.message}) from None
+    return {"status": "cleared_for_delivery", "session_id": session.session_id}
+
+
+# ---------------------------------------------------------------------------
+# Chat / tool-use
+# ---------------------------------------------------------------------------
+
+
+class ChatRequest(BaseModel):
+    # `history` is deliberately absent. The transcript lives on the
+    # Session, server-side. A client-supplied history is a
+    # client-AUTHORED history: it lets a caller forge assistant turns
+    # and tool_result blocks asserting that checks already passed,
+    # which is exactly the unbacked model self-report spec rule 4.1
+    # refuses to treat as enforcement (B1, pre-deploy review
+    # 2026-07-25).
+    message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_CHARS)
+    tool_ids: Optional[List[str]] = None
+
+
+@app.post("/sessions/{session_id}/chat")
+def chat(
+    session_id: str,
+    body: ChatRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    _chat_rate_limiter.check(user_id)
+    session = _get_session(user_id, session_id)
+
+    if body.tool_ids is not None:
+        unknown = [t for t in body.tool_ids if t not in set(registry.ids())]
+        if unknown:
+            # Was a KeyError escaping as a 500; bad client input is a 400
+            # (S4, pre-deploy review 2026-07-25).
+            raise HTTPException(status_code=400, detail=f"Unknown tool id(s): {', '.join(sorted(unknown))}")
+
+    # Serialize concurrent turns on one session: run_turn mutates
+    # session state through needs_session tools, and two overlapping
+    # turns would interleave those writes (S1).
+    with store.lock_for(user_id, session_id):
+        session.append_messages([{"role": "user", "content": body.message}])
+        try:
+            result = run_turn(
+                spec_text=_get_spec_text(),
+                messages=list(session.messages),
+                session=session,
+                tool_ids=body.tool_ids,
+            )
+        except ToolLoopExhausted:
+            logger.warning("Tool loop exhausted for session %s", session_id)
+            raise HTTPException(
+                status_code=409,
+                detail="The assistant could not complete this turn. Rephrase and try again.",
+            ) from None
+
+        # Replace rather than append: run_turn returns the full updated
+        # transcript, already normalized to plain dicts.
+        session.messages = result["messages"][-MAX_TRANSCRIPT_MESSAGES:]
+        store.save(session)
+
+    return {"text": result["text"]}
+
+
+# ---------------------------------------------------------------------------
+# Debug / introspection
+# ---------------------------------------------------------------------------
+
+
+@app.get("/debug/tools")
+def list_tools(user_id: str = Depends(get_current_user_id)) -> List[Dict[str, Any]]:
+    """Authenticated, and additionally off in production unless
+    IRIS_ENABLE_DOCS is set: it enumerates the whole enforcement
+    architecture, which no ordinary user needs."""
+    if not _DOCS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found.")
+    return [
+        {"id": spec.id, "name": spec.name, "kind": spec.kind.value, "blocking": spec.blocking}
+        for spec in registry.all()
+    ]

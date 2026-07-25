@@ -1,0 +1,96 @@
+"""
+Tuned threshold values.
+
+Amendment protocol rule 5 (docs/iris-spec.md): threshold values tuned
+against real documents live in code config, not in the spec. Tuning
+these must never require a spec amendment. If you're changing a
+number in this file because real documents proved it wrong, that's
+exactly what this file is for. If you're changing what a rule means,
+that's a spec amendment instead, see docs/iris-spec.md.
+"""
+
+from __future__ import annotations
+
+import os
+
+# T-0.2: extraction confidence, evaluated per section, fail-closed.
+EXTRACTION_CONFIDENCE = {
+    "ocr_min_confidence": 0.85,
+    "max_replacement_char_ratio": 0.02,
+    "min_role_blocks_with_dates": 2,
+    "max_date_parse_failure_ratio": 0.20,
+}
+
+# T-3.3: frequency-gated banned terms ("effectively", "directly") are
+# ordinary English below this count and a tell above it.
+BANNED_TERM_FREQUENCY_THRESHOLD = 2
+
+# T-8.7: per-bullet word limit. A default, not a hard ceiling; see
+# T-8.21 for the per-instance authorization path that overrides it.
+BULLET_WORD_LIMIT_DEFAULT = 60
+
+# T-7.2 / T-7.13: cover letter length. Same authorization path applies.
+COVER_LETTER_WORD_RANGE = (250, 400)
+
+# Fonts and sizes, ATS compliance (T-4.4).
+ALLOWED_FONTS = {"Arial", "Calibri", "Helvetica", "Garamond", "Georgia"}
+BODY_FONT_SIZE_RANGE = (10, 12)
+NAME_FONT_SIZE_RANGE = (11, 14)
+
+# T-4.11: tailored resume length target, a floor not a ceiling.
+TAILORED_PAGE_TARGET = (1, 2)
+
+# T-4.11/T-4.12: page-length heuristic. python-docx has no layout
+# engine, so this estimates from font size, page geometry, and
+# character/line counts rather than a true render. Deliberately
+# approximate, decided 2026-07-25 over standing up a real renderer
+# (LibreOffice headless) since TAILORED_PAGE_TARGET is already a
+# range, not an exact count. margin_in matches app/tools/docx_render.py's
+# hardcoded Inches(1); if that ever changes, change it here too. Tune
+# these, don't rewrite the formula, if real resumes prove the estimate
+# off in one direction. See app/tools/page_estimate.py's module
+# docstring for exactly what this does and doesn't model.
+PAGE_ESTIMATE = {
+    "page_width_in": 8.5,
+    "page_height_in": 11.0,
+    "margin_in": 1.0,
+    "default_font_size_pt": 11.0,
+    "char_width_factor": 0.50,
+    "line_height_factor": 1.15,
+}
+
+# Model id. Env-overridable so a model change does not require a
+# redeploy of code (N5, pre-deploy review 2026-07-25).
+MODEL = os.environ.get("IRIS_MODEL", "claude-sonnet-5")
+
+# ---------------------------------------------------------------------------
+# Runtime resource limits (B4/B5, pre-deploy review 2026-07-25).
+#
+# These are not style thresholds like the ones above; they exist because
+# /chat spends real money on every call and the session store lives in
+# the memory of one always-on instance. They bound cost and memory, not
+# document quality. Tune them, but never remove them: unbounded is the
+# failure mode they exist to prevent.
+# ---------------------------------------------------------------------------
+
+# Longest single user message accepted by /chat.
+MAX_MESSAGE_CHARS = 20_000
+
+# Longest extracted-document text handed to the model in one tool result.
+# A resume or JD well over this is far more likely to be a paste error or
+# an injection payload than a real document (see app/untrusted_text.py).
+MAX_INGEST_TEXT_CHARS = 100_000
+
+# Turns retained in a session transcript. Oldest are dropped first.
+MAX_TRANSCRIPT_MESSAGES = 100
+
+# Idle time before a session is evicted. In-memory storage means an
+# abandoned session is retained for the life of the process otherwise.
+SESSION_TTL_SECONDS = 8 * 60 * 60
+
+# Hard ceiling on concurrently stored sessions per user.
+MAX_SESSIONS_PER_USER = 20
+
+# Per-user /chat rate limit: max calls within the rolling window.
+CHAT_RATE_LIMIT_CALLS = 30
+CHAT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60

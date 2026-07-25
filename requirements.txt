@@ -1,0 +1,18 @@
+# Production dependencies. Pinned with compatible-release constraints:
+# Render reinstalls on every deploy, so unpinned dependencies mean an
+# unrelated one-line commit can pull a breaking upstream major version
+# and take down production with nothing in the diff to explain it
+# (B3, pre-deploy review 2026-07-25).
+#
+# anthropic is the sharpest edge: pre-1.0, breaking changes between
+# minor versions are routine, and the whole /chat path runs through it.
+#
+# Test-only dependencies live in requirements-dev.txt and are not
+# installed in the deployed image.
+anthropic~=0.120.0
+fastapi~=0.139.0
+uvicorn~=0.51.0
+pydantic~=2.13
+python-docx~=1.2
+pypdf~=6.14
+pyjwt[crypto]~=2.13

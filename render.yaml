@@ -1,0 +1,51 @@
+# Render Blueprint. Deploy: connect this repo at
+# https://dashboard.render.com/blueprints, "New Blueprint Instance".
+#
+# plan: starter (not free) is deliberate, not an oversight: Render's
+# free tier spins the instance down after 15 minutes of inactivity and
+# cold-starts on the next request. Iris's session store is in-memory
+# and single-process (app/session.py): a cold start would silently
+# wipe every in-progress resume session. starter (~$7/mo) keeps one
+# instance running continuously, which this architecture requires
+# regardless of which host runs it.
+#
+# Secrets (sync: false below) are NOT set here and must never be
+# committed: Render will prompt for each on first deploy, and you can
+# update them any time from the dashboard's Environment tab. Get
+# ANTHROPIC_API_KEY from your Anthropic console, CLERK_ISSUER from the
+# Clerk dashboard's API Keys page (see app/clerk_auth.py's docstring
+# for what this looks like), CLERK_AUTHORIZED_PARTIES and
+# ALLOWED_ORIGINS once the frontend's real hosted origin is known.
+# Leave both blank until then, which is a stricter default (nothing
+# is allowed) not a permissive one.
+
+services:
+  - type: web
+    runtime: python
+    name: iris-harness
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    # N7: deliberate deploys, not push-triggered. Every deploy restarts
+    # the process and the session store is in memory, so an autodeploy
+    # drops every in-flight session mid-resume.
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: CLERK_AUTHORIZED_PARTIES
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Leave unset in production. Enabling this turns on /docs, /redoc,
+      # /openapi.json and /debug/tools, which together publish a full map
+      # of the API and the enforcement architecture.
+      - key: IRIS_ENABLE_DOCS
+        sync: false

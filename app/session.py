@@ -1,0 +1,322 @@
+"""
+Session state.
+
+This is an in-memory implementation, and that is a KNOWN, ACCEPTED
+limitation for the V1 deploy rather than an oversight: state is lost
+on restart (including every Render deploy) and does not survive across
+multiple instances, which is why the deploy is pinned to a single
+always-on instance. V2's account-based storage replaces SessionStore's
+dict with a real per-user store without changing its interface.
+
+Because the process is now long-lived by design, sessions must expire
+on their own; nothing else will ever reclaim them. See SessionStore's
+eviction handling (B5, pre-deploy review 2026-07-25).
+
+The isolation boundary (spec 7.6, T-9.12) is enforced here: every
+lookup is keyed by (user_id, session_id) together, and a lookup with
+the wrong user_id for a real session_id raises exactly the same error
+as a session_id that doesn't exist at all. A caller cannot distinguish
+"wrong session" from "wrong user for someone else's session," which is
+the point: nothing here can be probed to confirm another user's
+session_id is valid.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import IntEnum
+from typing import Dict, List, Optional, Tuple
+
+from app.config import MAX_SESSIONS_PER_USER, MAX_TRANSCRIPT_MESSAGES, SESSION_TTL_SECONDS
+
+
+class Phase(IntEnum):
+    STARTING_POINT = 0
+    AUDIT = 1
+    MASTER_BUILD = 2
+    SLOP_AUDIT = 3
+    FORMATTING = 4
+    FIT_CHECK = 5
+    TAILORING = 6
+    COVER_LETTER = 7
+    FINAL_REVIEW = 8
+
+
+@dataclass
+class Fact:
+    """Locked Facts Registry entry (spec section 5, tool list section 16)."""
+
+    id: str
+    type: str  # metric | date_span | entity | claim | skill | phrasing_lock
+    value: str  # write-once; see supersede(), never mutate directly
+    statement: str
+    variants: List[str] = field(default_factory=list)
+    source: Optional[str] = None
+    role_ref: Optional[str] = None
+    status: str = "active"  # active | superseded
+    supersedes: Optional[str] = None
+    co_occurs_with: List[str] = field(default_factory=list)
+
+    def approve_variant(self, phrasing: str) -> None:
+        """5.4: new variants require user approval before the value-match
+        tool will accept them. Call this only from a path the user
+        actually confirmed; there is no automatic path to this method."""
+        if phrasing not in self.variants:
+            self.variants.append(phrasing)
+
+
+class CriticalNotDismissibleError(Exception):
+    """Raised on any attempt to dismiss a Critical finding. Spec: the
+    Iris Profile carries dismissed findings, with Critical findings
+    excluded from dismissal."""
+
+
+@dataclass
+class Finding:
+    id: str
+    tool_id: str  # which T- item raised this
+    severity: str  # Critical | High | Medium | Low
+    issue: str
+    fix: str
+    content_signature: Optional[str] = None
+    section: Optional[str] = None  # T-2.13: which careerInventory section this pertains to, if any
+    dispositioned: bool = False  # T-1.8: fixed or acknowledged-with-reason
+    disposition_reason: Optional[str] = None
+    dismissed: bool = False  # advisory-tier only; see dismiss(), Critical is never dismissible
+
+    def dismiss(self) -> None:
+        """The ONLY supported way to set dismissed=True.
+
+        Before 2026-07-25 this invariant existed solely as a comment on
+        the field above, and apply_dismissed_findings (T-2.18) set the
+        flag directly with no severity check. Because open_criticals()
+        filters on `not dismissed`, and require_no_open_criticals
+        (T-8.18) reads open_criticals(), dismissing a Critical opened
+        the delivery gate: a model-callable tool could clear the exact
+        finding the gate exists to hold. Reachable by prompt injection,
+        by a malicious profile import, or by the model simply taking a
+        shortcut under pressure to finish.
+
+        Enforcing it on the model rather than at call sites is
+        deliberate: a check in one caller is a check the next caller
+        forgets."""
+        if self.severity == "Critical":
+            raise CriticalNotDismissibleError(
+                f"Finding {self.id} ({self.tool_id}) is Critical and cannot be "
+                "dismissed. Criticals are resolved by fixing the underlying "
+                "issue or dispositioning them with a stated reason, never by "
+                "dismissal."
+            )
+        self.dismissed = True
+
+
+@dataclass
+class LimitOverride:
+    """T-8.21: records a per-instance authorization to exceed a default
+    limit (bullet word count, cover letter length). Distinct from a
+    config change: this covers exactly one artifact, not every future
+    one."""
+
+    limit_id: str  # e.g. "T-8.7" or "T-7.13"
+    artifact_ref: str
+    rationale: str
+    recorded_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+
+@dataclass
+class Session:
+    session_id: str
+    user_id: str
+    phase: Phase = Phase.STARTING_POINT
+    registry: Dict[str, Fact] = field(default_factory=dict)
+    findings: List[Finding] = field(default_factory=list)
+    limit_overrides: List[LimitOverride] = field(default_factory=list)
+    master_fingerprint: Optional[str] = None  # T-2.19
+    fit_check_gaps: List[str] = field(default_factory=list)  # T-6.15: carried into the cover letter
+    fit_check_completed: bool = False  # T-5.1: must be true before Tailoring
+    jd_text: Optional[str] = None  # T-6.1: current pasted job description
+    jd_fingerprint: Optional[str] = None  # T-6.1: sha256 of jd_text, set on ingest
+    gap_acknowledgments: Dict[str, str] = field(default_factory=dict)  # T-7.8: gap text -> stated reason
+    fix_attempts: Dict[str, int] = field(default_factory=dict)  # T-8.19: keyed by content signature
+    active_batch_id: Optional[str] = None  # T-9.7: None means no batch currently open
+    pending_amendment_reason: Optional[str] = None  # T-9.6: set when a decision changes a rule, cleared once the diff is committed
+    locked_package_versions: Dict[str, int] = field(default_factory=dict)  # T-9.8: artifact_ref -> version
+    messages: List[Dict] = field(default_factory=list)  # B1: server-owned transcript, never client-supplied
+    created_at: float = field(default_factory=time.monotonic)
+    last_accessed: float = field(default_factory=time.monotonic)  # B5: drives idle eviction
+
+    def append_messages(self, new_messages: List[Dict]) -> None:
+        """Appends to the server-owned transcript, trimming oldest
+        first past MAX_TRANSCRIPT_MESSAGES.
+
+        The transcript lives here, not in the request body, because a
+        client-supplied history is a client-authored history: it lets a
+        caller forge assistant turns and tool_result blocks claiming
+        checks already passed, which is precisely the model
+        self-report that spec rule 4.1 refuses to accept as
+        enforcement (B1, pre-deploy review 2026-07-25)."""
+        self.messages.extend(new_messages)
+        if len(self.messages) > MAX_TRANSCRIPT_MESSAGES:
+            self.messages = self.messages[-MAX_TRANSCRIPT_MESSAGES:]
+
+    def active_facts(self) -> List[Fact]:
+        return [f for f in self.registry.values() if f.status == "active"]
+
+    def is_registry_empty(self) -> bool:
+        return len(self.active_facts()) == 0
+
+    def open_criticals(self) -> List[Finding]:
+        """Defense in depth: Finding.dismiss() already refuses to set
+        the flag on a Critical, so the `not f.dismissed` clause should
+        be unreachable for Criticals. It stays anyway, because a
+        Finding constructed directly with dismissed=True (a profile
+        import, a future code path, a test fixture) would otherwise
+        slip past the gate. Two independent things now have to fail
+        before a Critical goes quiet."""
+        return [
+            f
+            for f in self.findings
+            if f.severity == "Critical" and not f.dismissed
+        ]
+
+    def undispositioned_phase1_criticals(self) -> List[Finding]:
+        return [
+            f
+            for f in self.open_criticals()
+            if f.tool_id.startswith("T-1.") and not f.dispositioned
+        ]
+
+
+class SessionNotFoundError(KeyError):
+    """Raised for a missing session AND for a real session_id under the
+    wrong user_id. Deliberately the same exception in both cases."""
+
+
+class SessionStore:
+    """Keyed by (user_id, session_id) as a TUPLE, not a joined string.
+
+    T-9.13 (concurrency): a lock guards every mutation of the
+    `_sessions` dict, since FastAPI runs sync route handlers in a
+    thread pool. Note carefully what that does and does not cover.
+    The lock protects the MAPPING. It does not protect the Session
+    objects inside it: get() returns a live reference, and callers
+    mutate that object after the lock is released. Per-session locks
+    (see lock_for) are provided for callers that need to serialize
+    work on one session. The earlier version of this docstring claimed
+    a broader guarantee than the code provided (S1, pre-deploy review
+    2026-07-25); this states the real boundary.
+
+    T-9.12 (isolation): a wrong-user lookup and a nonexistent-session
+    lookup raise the identical error, so the store cannot be probed to
+    confirm someone else's session_id exists.
+
+    B5: sessions expire. Nothing else reclaims them in a process that
+    is deliberately never restarted.
+    """
+
+    def __init__(self) -> None:
+        self._sessions: Dict[Tuple[str, str], Session] = {}
+        self._session_locks: Dict[Tuple[str, str], threading.Lock] = {}
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _key(user_id: str, session_id: str) -> Tuple[str, str]:
+        """A tuple, deliberately.
+
+        The previous implementation joined these with a colon.
+        session_id arrives straight off the URL path and is fully
+        caller-controlled, so a user_id containing the delimiter would
+        have made two different (user, session) pairs collide on one
+        key. Clerk's opaque `user_...` subjects contain no colons, so
+        this was never live, but a tuple makes the whole class of
+        delimiter-confusion bug structurally impossible instead of
+        contingent on an identity provider's formatting (S2,
+        pre-deploy review 2026-07-25)."""
+        return (user_id, session_id)
+
+    def _evict_expired_locked(self, now: float) -> None:
+        """Caller must hold self._lock."""
+        expired = [k for k, s in self._sessions.items() if now - s.last_accessed > SESSION_TTL_SECONDS]
+        for key in expired:
+            del self._sessions[key]
+            self._session_locks.pop(key, None)
+
+    def _enforce_user_quota_locked(self, user_id: str) -> None:
+        """Caller must hold self._lock. Drops that user's least
+        recently used sessions past the cap, so one user cannot exhaust
+        a shared instance's memory by opening sessions in a loop."""
+        owned = sorted(
+            (k for k in self._sessions if k[0] == user_id),
+            key=lambda k: self._sessions[k].last_accessed,
+        )
+        while len(owned) >= MAX_SESSIONS_PER_USER:
+            key = owned.pop(0)
+            del self._sessions[key]
+            self._session_locks.pop(key, None)
+
+    def create(self, user_id: str) -> Session:
+        now = time.monotonic()
+        with self._lock:
+            self._evict_expired_locked(now)
+            self._enforce_user_quota_locked(user_id)
+            session_id = str(uuid.uuid4())
+            session = Session(session_id=session_id, user_id=user_id)
+            self._sessions[self._key(user_id, session_id)] = session
+            return session
+
+    def get(self, user_id: str, session_id: str) -> Session:
+        key = self._key(user_id, session_id)
+        now = time.monotonic()
+        with self._lock:
+            self._evict_expired_locked(now)
+            if key not in self._sessions:
+                raise SessionNotFoundError(session_id)
+            session = self._sessions[key]
+            session.last_accessed = now
+            return session
+
+    def lock_for(self, user_id: str, session_id: str) -> threading.Lock:
+        """A per-session lock, for callers that need to serialize
+        mutation of one session across concurrent requests. Created on
+        demand and reused, so two callers asking for the same
+        session's lock get the same object."""
+        key = self._key(user_id, session_id)
+        with self._lock:
+            if key not in self._session_locks:
+                self._session_locks[key] = threading.Lock()
+            return self._session_locks[key]
+
+    def save(self, session: Session) -> None:
+        """Sessions are stored by reference, so mutations are already
+        visible without this; it exists so callers read naturally and
+        so a future store that genuinely needs a write step can be
+        dropped in behind the same interface."""
+        with self._lock:
+            session.last_accessed = time.monotonic()
+            self._sessions[self._key(session.user_id, session.session_id)] = session
+
+    def delete(self, user_id: str, session_id: str) -> None:
+        """T-9.11: session-scoped data store. Registry, term lists, and
+        preferences are discarded at logout, with no persistence beyond
+        this process. Raises the same SessionNotFoundError as get() for
+        a missing or wrong-user session_id, so this call cannot be used
+        to probe whether another user's session exists either."""
+        key = self._key(user_id, session_id)
+        with self._lock:
+            if key not in self._sessions:
+                raise SessionNotFoundError(session_id)
+            del self._sessions[key]
+            self._session_locks.pop(key, None)
+
+    def count(self) -> int:
+        with self._lock:
+            return len(self._sessions)
+
+
+store = SessionStore()
