@@ -31,7 +31,12 @@ from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Dict, List, Optional, Tuple
 
-from app.config import MAX_SESSIONS_PER_USER, MAX_TRANSCRIPT_MESSAGES, SESSION_TTL_SECONDS
+from app.config import (
+    MAX_ATTACHMENTS_PER_SESSION,
+    MAX_SESSIONS_PER_USER,
+    MAX_TRANSCRIPT_MESSAGES,
+    SESSION_TTL_SECONDS,
+)
 
 
 class Phase(IntEnum):
@@ -130,6 +135,21 @@ class LimitOverride:
 
 
 @dataclass
+class Attachment:
+    """An uploaded file, stored server-side. The model references this
+    by id when calling ingest_document (T-0.1); it never receives the
+    raw base64 bytes as a tool argument, since typing tens of
+    thousands of characters into a tool call just to name a file is
+    exactly the token waste T-0.1's own docstring warns against."""
+
+    id: str
+    filename: str
+    file_type: str  # "docx" or "pdf"
+    file_base64: str
+    uploaded_at: float = field(default_factory=time.monotonic)
+
+
+@dataclass
 class Session:
     session_id: str
     user_id: str
@@ -150,6 +170,28 @@ class Session:
     messages: List[Dict] = field(default_factory=list)  # B1: server-owned transcript, never client-supplied
     created_at: float = field(default_factory=time.monotonic)
     last_accessed: float = field(default_factory=time.monotonic)  # B5: drives idle eviction
+    attachments: Dict[str, Attachment] = field(default_factory=dict)  # T-0.1: uploaded files, keyed by attachment id
+
+    def add_attachment(self, filename: str, file_type: str, file_base64: str) -> Attachment:
+        """Stores an uploaded file and returns a reference the model
+        can cite by id in a tool call. Enforces
+        MAX_ATTACHMENTS_PER_SESSION by evicting the oldest attachment
+        first, the same policy SessionStore already applies to its own
+        per-user session quota."""
+        if len(self.attachments) >= MAX_ATTACHMENTS_PER_SESSION:
+            oldest_id = min(self.attachments, key=lambda k: self.attachments[k].uploaded_at)
+            del self.attachments[oldest_id]
+        attachment = Attachment(
+            id=str(uuid.uuid4()),
+            filename=filename,
+            file_type=file_type,
+            file_base64=file_base64,
+        )
+        self.attachments[attachment.id] = attachment
+        return attachment
+
+    def get_attachment(self, attachment_id: str) -> Optional[Attachment]:
+        return self.attachments.get(attachment_id)
 
     def append_messages(self, new_messages: List[Dict]) -> None:
         """Appends to the server-owned transcript, trimming oldest

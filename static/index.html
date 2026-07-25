@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iris</title>
+
+<link rel="stylesheet" href="/static/lore-tokens.css">
+<link rel="stylesheet" href="/static/iris-theme.css">
+<link rel="stylesheet" href="/static/iris-app.css">
+
+<!--
+  Clerk vanilla JS SDK, script-tag embed. This is Clerk's own
+  officially documented no-bundler path (clerk.com/docs/js-frontend),
+  chosen deliberately over their React SDK: this app has no build
+  step at all, and a React-via-CDN-import-map setup would be one more
+  moving part with no framework anywhere else to justify it.
+
+  REPLACE both placeholders below with your real values from the
+  Clerk dashboard's API Keys page before this will work:
+    - YOUR_FRONTEND_API_URL is the same value as CLERK_ISSUER on the
+      backend (see app/clerk_auth.py's docstring).
+    - YOUR_PUBLISHABLE_KEY is safe to embed in client-side code like
+      this; it is not a secret, unlike CLERK_ISSUER's paired secret
+      key, which never belongs in anything the browser can see.
+-->
+<script
+  defer
+  crossorigin="anonymous"
+  src="https://https://stable-robin-5.clerk.accounts.dev/npm/@clerk/ui@1/dist/ui.browser.js"
+  type="text/javascript"
+></script>
+<script
+  defer
+  crossorigin="anonymous"
+  data-clerk-publishable-key="pk_test_c3RhYmxlLXJvYmluLTUuY2xlcmsuYWNjb3VudHMuZGV2JA"
+  src="https://https://stable-robin-5.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
+  type="text/javascript"
+></script>
+</head>
+<body>
+
+<!-- Shown until Clerk finishes loading and resolves sign-in state. -->
+<div id="boot-loading" class="boot-loading">
+  <span class="lore-display boot-mark">Iris</span>
+</div>
+
+<!-- Clerk mounts its own sign-in widget here for a signed-out visitor. -->
+<div id="sign-in-container" class="sign-in-container" hidden></div>
+
+<!-- The actual app. Hidden until Clerk confirms the visitor is signed in. -->
+<div id="app" class="app" hidden>
+
+  <header class="app-header">
+    <span class="lore-display app-wordmark">Iris</span>
+    <div class="header-actions">
+      <button id="new-session-btn" class="lore-btn-ghost">New session</button>
+      <div id="user-button-container"></div>
+    </div>
+  </header>
+
+  <main class="chat-main">
+    <div id="message-list" class="message-list" aria-live="polite"></div>
+
+    <div id="thinking-indicator" class="thinking-indicator" hidden>
+      <span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>
+    </div>
+  </main>
+
+  <footer class="composer">
+    <div id="attachment-chip" class="attachment-chip" hidden>
+      <span id="attachment-chip-label"></span>
+      <button id="attachment-chip-remove" class="attachment-chip-remove" aria-label="Remove attachment">&times;</button>
+    </div>
+
+    <div class="composer-row">
+      <button id="attach-btn" class="lore-btn-ghost composer-attach" aria-label="Attach a resume or job posting" title="Attach a .docx or .pdf">
+        +
+      </button>
+      <input type="file" id="file-input" accept=".docx,.pdf" hidden>
+      <textarea
+        id="message-input"
+        class="lore-input composer-input"
+        placeholder="Paste a job description, ask a question, or attach a resume to get started"
+        rows="1"
+      ></textarea>
+      <button id="send-btn" class="lore-btn-primary composer-send">Send</button>
+    </div>
+  </footer>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

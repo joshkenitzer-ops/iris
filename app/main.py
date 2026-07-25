@@ -25,6 +25,7 @@ trace, an accidental secret in an error message) reaches a client.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import threading
@@ -33,9 +34,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import app.tools  # noqa: F401  (import for its decorator side effects; do not remove)
@@ -46,6 +48,7 @@ from app.config import (
     CHAT_RATE_LIMIT_WINDOW_SECONDS,
     MAX_MESSAGE_CHARS,
     MAX_TRANSCRIPT_MESSAGES,
+    MAX_UPLOAD_BYTES,
 )
 from app.enforcement import registry
 from app.gates import (
@@ -60,6 +63,7 @@ from app.session import Phase, Session, SessionNotFoundError, store
 from app.spec_loader import load_spec_text
 
 SPEC_PATH = Path(__file__).resolve().parent.parent / "docs" / "iris-spec.md"
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 logger = logging.getLogger("iris")
 
@@ -84,13 +88,18 @@ def _get_spec_text() -> str:
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    """N4: /chat reads the spec from disk. If docs/iris-spec.md is
-    missing from the deployed tree, fail loudly at boot rather than
-    with a 500 on the first user request."""
+    """N4: /chat reads the spec from disk, and / serves the frontend
+    shell from disk. If either is missing from the deployed tree,
+    fail loudly at boot rather than with a 500 on the first request."""
     if not SPEC_PATH.is_file():
         raise RuntimeError(
             f"Spec file not found at {SPEC_PATH}. docs/iris-spec.md must be "
             "committed and present in the deployed tree."
+        )
+    if not (STATIC_DIR / "index.html").is_file():
+        raise RuntimeError(
+            f"Frontend not found at {STATIC_DIR / 'index.html'}. The static/ "
+            "directory must be committed and present in the deployed tree."
         )
     _get_spec_text()
     yield
@@ -167,6 +176,23 @@ def health() -> Dict[str, str]:
     the process is up. Deliberately minimal: no version string, no
     build info, nothing an unauthenticated caller shouldn't see."""
     return {"status": "ok"}
+
+
+# Same-origin static hosting: the frontend is served by this same
+# FastAPI process rather than a separate host. The browser never makes
+# a cross-origin request to reach the API, so there is no CORS
+# surface for the frontend itself to configure; ALLOWED_ORIGINS stays
+# available for any future non-browser or genuinely cross-origin
+# client, but the UI doesn't need it.
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/")
+def index() -> FileResponse:
+    """Serves the frontend shell. Deliberately unauthenticated: this is
+    exactly what has to render the Clerk sign-in widget for a visitor
+    who isn't signed in yet."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +330,52 @@ def deliver(
 # ---------------------------------------------------------------------------
 # Chat / tool-use
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Attachments: a place for uploaded file bytes to live server-side, so the
+# model never has to receive or type out raw base64 as a tool argument.
+# ---------------------------------------------------------------------------
+
+_EXTENSION_TO_FILE_TYPE = {".docx": "docx", ".pdf": "pdf"}
+
+
+@app.post("/sessions/{session_id}/attachments")
+async def upload_attachment(
+    session_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, str]:
+    """Uploads a resume or job posting file, storing it on the session
+    and returning an attachment_id. The model calls ingest_document
+    (T-0.1) with that id, never with the file's content directly - see
+    app.session.Attachment and app.tools.intake.ingest_document for
+    why. Rejects anything but .docx/.pdf by extension and anything
+    over MAX_UPLOAD_BYTES before ever touching session state."""
+    session = _get_session(user_id, session_id)
+
+    filename = file.filename or ""
+    suffix = Path(filename).suffix.lower()
+    file_type = _EXTENSION_TO_FILE_TYPE.get(suffix)
+    if file_type is None:
+        raise HTTPException(status_code=400, detail="Only .docx and .pdf files are accepted.")
+
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
+        )
+    if len(raw) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    attachment = session.add_attachment(
+        filename=filename,
+        file_type=file_type,
+        file_base64=base64.b64encode(raw).decode("ascii"),
+    )
+    store.save(session)
+    return {"attachment_id": attachment.id, "filename": attachment.filename, "file_type": attachment.file_type}
 
 
 class ChatRequest(BaseModel):

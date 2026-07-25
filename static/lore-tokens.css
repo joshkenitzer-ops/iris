@@ -1,0 +1,321 @@
+/**
+ * Lore Design Tokens
+ * github.com/joshkenitzer-ops/lore
+ *
+ * Import this file into any Lore tool UI.
+ * @import url('lore-tokens.css');
+ *
+ * 2026-07-25: added the Iris amber block (was locked in the brand
+ * record but never made it into this file). Also added
+ * --lore-purple-text and --lore-amber-text: two accent colors in the
+ * original file failed WCAG AA when used as text/button-fill
+ * combinations. Both are additive fixes; nothing existing was
+ * removed, only .lore-accent's color now points at a token that
+ * actually passes contrast on dark surfaces.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+
+  /* ── COLOR ── */
+
+  /* Core */
+  --lore-black:         #0D0D0D;
+  --lore-white:         #FFFFFF;
+  --lore-purple:        #7B2FBE;
+  --lore-purple-light:  #9B4FDE;
+  --lore-purple-dim:    #3D1860;
+  --lore-purple-ghost:  #1A0A2E;
+
+  /* 2026-07-25: --lore-purple-light fails WCAG AA as text on dark
+     surfaces (3.78:1 on --lore-surface-card, needs 4.5:1) even though
+     it's fine as a button-hover background with white text on top
+     (4.60:1). This token is for TEXT use specifically; --lore-purple
+     and --lore-purple-light are unchanged and still used for fills. */
+  --lore-purple-text:   #A968E0;  /* 4.76:1 on surface-card, 5.32:1 on base */
+
+  /* Iris (formerly Hermes). Locked color was #B8860B; the -light,
+     -dim, -ghost tints and the shadow below are new, built to match
+     the same tonal ladder --lore-purple already has. */
+  --lore-amber:        #B8860B;
+  --lore-amber-light:  #DAA520;
+  --lore-amber-dim:    #4A3505;
+  --lore-amber-ghost:  #1F1706;
+
+  /* White text on a solid amber or amber-light fill fails WCAG AA
+     (3.25:1 and 2.24:1). Near-black text on either passes with real
+     margin (5.97:1 and 8.68:1). Use this, not --lore-white, for text
+     sitting on an amber background. */
+  --lore-amber-text:   #0D0D0D;
+
+  /* Surface */
+  --lore-surface-base:  #0D0D0D;
+  --lore-surface-raised:#141414;
+  --lore-surface-card:  #1A1A1A;
+  --lore-surface-input: #111111;
+
+  /* Text */
+  --lore-text-primary:  #FFFFFF;
+  --lore-text-secondary:#A0A0A0;
+  --lore-text-muted:    #5A5A5A;
+  --lore-text-accent:   #9B4FDE;
+
+  /* Border */
+  --lore-border:        #2A2A2A;
+  --lore-border-accent: #7B2FBE;
+
+  /* Status */
+  --lore-status-pass:   #1A7A45;
+  --lore-status-pass-bg:#0D2B1A;
+  --lore-status-warn:   #856404;
+  --lore-status-warn-bg:#2B2000;
+  --lore-status-fail:   #9B1C1C;
+  --lore-status-fail-bg:#2B0A0A;
+  --lore-status-info:   #1A4BAA;
+  --lore-status-info-bg:#0A1A3A;
+
+  /* Severity (Cassandra) */
+  --lore-severity-critical: #FF4444;
+  --lore-severity-high:     #FF8800;
+  --lore-severity-medium:   #FFCC00;
+  --lore-severity-low:      #44AA44;
+  --lore-severity-info:     #4488FF;
+
+
+  /* ── TYPOGRAPHY ── */
+
+  /* Families */
+  --lore-font-display: 'Cinzel', Georgia, serif;
+  --lore-font-body:    'Inter', system-ui, sans-serif;
+  --lore-font-mono:    'IBM Plex Mono', 'Courier New', monospace;
+
+  /* Scale */
+  --lore-text-xs:   0.75rem;   /* 12px — labels, captions */
+  --lore-text-sm:   0.875rem;  /* 14px — secondary body */
+  --lore-text-base: 1rem;      /* 16px — primary body */
+  --lore-text-lg:   1.125rem;  /* 18px — lead text */
+  --lore-text-xl:   1.25rem;   /* 20px — section headers */
+  --lore-text-2xl:  1.5rem;    /* 24px — page headers */
+  --lore-text-3xl:  2rem;      /* 32px — display */
+  --lore-text-4xl:  2.5rem;    /* 40px — hero display */
+
+  /* Weight */
+  --lore-weight-light:   300;
+  --lore-weight-regular: 400;
+  --lore-weight-medium:  500;
+  --lore-weight-semibold:600;
+  --lore-weight-bold:    700;
+
+  /* Line height */
+  --lore-leading-tight:  1.2;
+  --lore-leading-snug:   1.4;
+  --lore-leading-normal: 1.6;
+  --lore-leading-loose:  1.8;
+
+  /* Letter spacing */
+  --lore-tracking-tight:  -0.02em;
+  --lore-tracking-normal:  0em;
+  --lore-tracking-wide:    0.05em;
+  --lore-tracking-wider:   0.1em;
+  --lore-tracking-widest:  0.2em;
+
+
+  /* ── SPACING ── */
+
+  --lore-space-1:  0.25rem;   /* 4px */
+  --lore-space-2:  0.5rem;    /* 8px */
+  --lore-space-3:  0.75rem;   /* 12px */
+  --lore-space-4:  1rem;      /* 16px */
+  --lore-space-5:  1.25rem;   /* 20px */
+  --lore-space-6:  1.5rem;    /* 24px */
+  --lore-space-8:  2rem;      /* 32px */
+  --lore-space-10: 2.5rem;    /* 40px */
+  --lore-space-12: 3rem;      /* 48px */
+  --lore-space-16: 4rem;      /* 64px */
+  --lore-space-20: 5rem;      /* 80px */
+  --lore-space-24: 6rem;      /* 96px */
+
+
+  /* ── LAYOUT ── */
+
+  --lore-max-width:      1200px;
+  --lore-content-width:  720px;
+  --lore-sidebar-width:  280px;
+
+  --lore-radius-sm:  4px;
+  --lore-radius-md:  6px;
+  --lore-radius-lg:  8px;
+  --lore-radius-xl:  12px;
+  --lore-radius-full: 9999px;
+
+
+  /* ── EFFECTS ── */
+
+  --lore-shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+  --lore-shadow-md:  0 4px 12px rgba(0,0,0,0.5);
+  --lore-shadow-lg:  0 8px 24px rgba(0,0,0,0.6);
+  --lore-shadow-purple: 0 0 24px rgba(123,47,190,0.3);
+  --lore-shadow-amber:  0 0 24px rgba(184,134,11,0.35);
+
+  --lore-rule: 1px solid #7B2FBE;
+  --lore-rule-dim: 1px solid #2A2A2A;
+
+  --lore-transition: 150ms ease;
+  --lore-transition-slow: 300ms ease;
+}
+
+
+/* ── BASE RESETS ── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--lore-black);
+  color: var(--lore-text-primary);
+  font-family: var(--lore-font-body);
+  font-size: var(--lore-text-base);
+  line-height: var(--lore-leading-normal);
+}
+
+
+/* ── UTILITY CLASSES ── */
+
+/* Typography */
+.lore-display {
+  font-family: var(--lore-font-display);
+  font-weight: var(--lore-weight-bold);
+  letter-spacing: var(--lore-tracking-wide);
+  color: var(--lore-text-primary);
+}
+
+.lore-label {
+  font-family: var(--lore-font-body);
+  font-size: var(--lore-text-xs);
+  font-weight: var(--lore-weight-medium);
+  letter-spacing: var(--lore-tracking-widest);
+  text-transform: uppercase;
+  color: var(--lore-text-secondary);
+}
+
+.lore-mono {
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-sm);
+  color: var(--lore-text-primary);
+}
+
+.lore-accent {
+  /* 2026-07-25: was --lore-purple-light, which fails AA as text on
+     dark surfaces. --lore-purple-text is built for this. */
+  color: var(--lore-purple-text);
+}
+
+/* Rule — the signature element */
+.lore-rule {
+  border: none;
+  border-top: var(--lore-rule);
+  margin: var(--lore-space-8) 0;
+}
+
+.lore-rule-dim {
+  border: none;
+  border-top: var(--lore-rule-dim);
+  margin: var(--lore-space-6) 0;
+}
+
+/* Cards */
+.lore-card {
+  background: var(--lore-surface-card);
+  border: 1px solid var(--lore-border);
+  border-radius: var(--lore-radius-lg);
+  padding: var(--lore-space-6);
+}
+
+.lore-card:hover {
+  border-color: var(--lore-border-accent);
+  box-shadow: var(--lore-shadow-purple);
+  transition: var(--lore-transition);
+}
+
+/* Buttons */
+.lore-btn-primary {
+  background: var(--lore-purple);
+  color: var(--lore-white);
+  font-family: var(--lore-font-body);
+  font-size: var(--lore-text-sm);
+  font-weight: var(--lore-weight-medium);
+  padding: var(--lore-space-3) var(--lore-space-6);
+  border: none;
+  border-radius: var(--lore-radius-md);
+  cursor: pointer;
+  transition: var(--lore-transition);
+}
+
+.lore-btn-primary:hover {
+  background: var(--lore-purple-light);
+}
+
+.lore-btn-ghost {
+  background: transparent;
+  color: var(--lore-text-secondary);
+  font-family: var(--lore-font-body);
+  font-size: var(--lore-text-sm);
+  font-weight: var(--lore-weight-medium);
+  padding: var(--lore-space-3) var(--lore-space-6);
+  border: 1px solid var(--lore-border);
+  border-radius: var(--lore-radius-md);
+  cursor: pointer;
+  transition: var(--lore-transition);
+}
+
+.lore-btn-ghost:hover {
+  border-color: var(--lore-purple);
+  color: var(--lore-white);
+}
+
+/* Input */
+.lore-input {
+  background: var(--lore-surface-input);
+  color: var(--lore-text-primary);
+  font-family: var(--lore-font-body);
+  font-size: var(--lore-text-base);
+  padding: var(--lore-space-3) var(--lore-space-4);
+  border: 1px solid var(--lore-border);
+  border-radius: var(--lore-radius-md);
+  width: 100%;
+  outline: none;
+  transition: var(--lore-transition);
+}
+
+.lore-input:focus {
+  border-color: var(--lore-purple);
+  box-shadow: 0 0 0 2px rgba(123,47,190,0.2);
+}
+
+/* Severity badges (Cassandra) */
+.lore-badge {
+  display: inline-block;
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-xs);
+  font-weight: var(--lore-weight-medium);
+  letter-spacing: var(--lore-tracking-wide);
+  text-transform: uppercase;
+  padding: 2px var(--lore-space-2);
+  border-radius: var(--lore-radius-sm);
+}
+
+.lore-badge-critical { color: var(--lore-severity-critical); background: rgba(255,68,68,0.1); }
+.lore-badge-high     { color: var(--lore-severity-high);     background: rgba(255,136,0,0.1); }
+.lore-badge-medium   { color: var(--lore-severity-medium);   background: rgba(255,204,0,0.1); }
+.lore-badge-low      { color: var(--lore-severity-low);      background: rgba(68,170,68,0.1); }
+.lore-badge-info     { color: var(--lore-severity-info);     background: rgba(68,136,255,0.1); }

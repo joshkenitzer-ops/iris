@@ -23,6 +23,7 @@ from typing import List
 
 from app.config import EXTRACTION_CONFIDENCE
 from app.enforcement import EnforcementKind, ToolResult, tool
+from app.session import Session
 from app.untrusted_text import wrap_untrusted
 
 
@@ -30,43 +31,59 @@ from app.untrusted_text import wrap_untrusted
     id="T-0.1",
     name="ingest_document",
     description=(
-        "Extracts raw text from an uploaded docx or PDF. Parsing is "
-        "solved; model tokens spent transcribing a document by hand "
-        "are waste, so this is deterministic extraction only, no "
-        "interpretation of what the text means. Feeds text and a "
-        "paragraph/page count forward into score_extraction_confidence "
-        "(T-0.2), which does the actual confidence scoring. A PDF with "
-        "no extractable text layer, most likely a scan with no OCR "
-        "pass, surfaces as a High finding rather than silently "
-        "returning an empty string, since that case needs routing to "
-        "manual review (T-0.3), not a Phase 1 pass built on nothing."
+        "Extracts raw text from a previously uploaded docx or PDF, "
+        "referenced by attachment_id (returned by POST "
+        "/sessions/{session_id}/attachments when the file was "
+        "uploaded). Parsing is solved; model tokens spent "
+        "transcribing a document by hand, or even just typing out its "
+        "base64 bytes as a tool argument, are waste, which is exactly "
+        "why this takes a short reference instead of file content. "
+        "This is deterministic extraction only, no interpretation of "
+        "what the text means. Feeds text and a paragraph/page count "
+        "forward into score_extraction_confidence (T-0.2), which does "
+        "the actual confidence scoring. A PDF with no extractable "
+        "text layer, most likely a scan with no OCR pass, surfaces as "
+        "a High finding rather than silently returning an empty "
+        "string, since that case needs routing to manual review "
+        "(T-0.3), not a Phase 1 pass built on nothing."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={
         "type": "object",
-        "properties": {
-            "file_base64": {"type": "string"},
-            "file_type": {"type": "string", "enum": ["docx", "pdf"]},
-        },
-        "required": ["file_base64", "file_type"],
+        "properties": {"attachment_id": {"type": "string"}},
+        "required": ["attachment_id"],
     },
+    needs_session=True,
 )
-def ingest_document(file_base64: str, file_type: str) -> ToolResult:
+def ingest_document(attachment_id: str, session: Session) -> ToolResult:
+    attachment = session.get_attachment(attachment_id)
+    if attachment is None:
+        return ToolResult(
+            passed=False,
+            findings=[
+                {
+                    "severity": "Critical",
+                    "issue": f"No attachment with id '{attachment_id}' on this session.",
+                    "fix": "Upload the file via POST /sessions/{session_id}/attachments and use the returned attachment_id.",
+                }
+            ],
+        )
+
     try:
-        raw = base64.b64decode(file_base64)
+        raw = base64.b64decode(attachment.file_base64)
     except Exception:
         return ToolResult(
             passed=False,
-            findings=[{"severity": "Critical", "issue": "file_base64 is not valid base64.", "fix": "Re-encode and resend the file."}],
+            findings=[{"severity": "Critical", "issue": "Stored attachment is not valid base64.", "fix": "Upload the file again."}],
         )
 
-    if file_type == "docx":
+    if attachment.file_type == "docx":
         return _ingest_docx(raw)
-    if file_type == "pdf":
+    if attachment.file_type == "pdf":
         return _ingest_pdf(raw)
     return ToolResult(
         passed=False,
-        findings=[{"severity": "Critical", "issue": f"Unsupported file_type '{file_type}'.", "fix": "Use 'docx' or 'pdf'."}],
+        findings=[{"severity": "Critical", "issue": f"Unsupported file_type '{attachment.file_type}'.", "fix": "Use 'docx' or 'pdf'."}],
     )
 
 

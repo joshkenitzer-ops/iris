@@ -91,6 +91,12 @@ SESSION_TTL_SECONDS = 8 * 60 * 60
 # Hard ceiling on concurrently stored sessions per user.
 MAX_SESSIONS_PER_USER = 20
 
+# Uploaded file (docx/pdf) limits. A resume or JD file has no business
+# being large; a very large upload is far more likely to be the wrong
+# file or an abuse attempt than a real document.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_ATTACHMENTS_PER_SESSION = 10  # oldest evicted first past this
+
 # Per-user /chat rate limit: max calls within the rolling window.
 CHAT_RATE_LIMIT_CALLS = 30
 CHAT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60

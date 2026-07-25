@@ -1,0 +1,261 @@
+/**
+ * Iris app layout.
+ *
+ * Deliberately holds no new color values anywhere in this file - every
+ * color reference here is a var(--lore-*) already defined in
+ * lore-tokens.css or iris-theme.css. If a color needs to change, it
+ * changes there, not here.
+ *
+ * A few choices made specifically to avoid the generic-AI-chat look:
+ * message bubbles use --lore-radius-md (6px), not a pill shape;
+ * amber is reserved for interactive elements (buttons, focus states,
+ * the thinking indicator) rather than decorating every message; there
+ * is no gradient anywhere in this file.
+ */
+
+html, body {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Boot / sign-in ── */
+
+.boot-loading {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.boot-mark {
+  font-size: var(--lore-text-3xl);
+  color: var(--lore-text-secondary);
+  opacity: 0.6;
+}
+
+.sign-in-container {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── App shell ── */
+
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--lore-space-4) var(--lore-space-6);
+  border-bottom: var(--lore-rule-dim);
+  flex-shrink: 0;
+}
+
+.app-wordmark {
+  font-size: var(--lore-text-xl);
+  color: var(--lore-amber-light);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lore-space-4);
+}
+
+/* ── Message list ── */
+
+.chat-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--lore-space-6);
+  display: flex;
+  flex-direction: column;
+}
+
+.message-list {
+  max-width: var(--lore-content-width);
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lore-space-4);
+}
+
+.message {
+  max-width: 80%;
+  padding: var(--lore-space-3) var(--lore-space-4);
+  border-radius: var(--lore-radius-md);
+  line-height: var(--lore-leading-normal);
+  white-space: pre-wrap;
+}
+
+.message-user {
+  align-self: flex-end;
+  background: var(--lore-surface-input);
+  border: 1px solid var(--lore-border);
+}
+
+.message-assistant {
+  align-self: flex-start;
+  background: var(--lore-surface-card);
+  border: 1px solid var(--lore-border);
+}
+
+.message-system {
+  align-self: center;
+  background: var(--lore-status-warn-bg);
+  border: 1px solid var(--lore-status-warn);
+  color: var(--lore-text-primary);
+  font-size: var(--lore-text-sm);
+  max-width: 90%;
+}
+
+.message-error {
+  align-self: center;
+  background: var(--lore-status-fail-bg);
+  border: 1px solid var(--lore-status-fail);
+  color: var(--lore-text-primary);
+  font-size: var(--lore-text-sm);
+  max-width: 90%;
+}
+
+/* Doherty Threshold: a chat call can run several tool-use rounds
+   before replying. Three dots pulsing in sequence reads as "working",
+   not "broken", during that wait. */
+.thinking-indicator {
+  align-self: flex-start;
+  max-width: var(--lore-content-width);
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: var(--lore-space-3) var(--lore-space-4);
+}
+
+.thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lore-amber);
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.thinking-dot:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes thinking-pulse {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dot { animation: none; opacity: 0.7; }
+}
+
+/* ── Composer ── */
+
+.composer {
+  flex-shrink: 0;
+  border-top: var(--lore-rule-dim);
+  padding: var(--lore-space-4) var(--lore-space-6) var(--lore-space-6);
+}
+
+.attachment-chip {
+  max-width: var(--lore-content-width);
+  margin: 0 auto var(--lore-space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--lore-space-2);
+  width: fit-content;
+  background: var(--lore-amber-ghost);
+  border: 1px solid var(--lore-amber-dim);
+  border-radius: var(--lore-radius-sm);
+  padding: var(--lore-space-1) var(--lore-space-3);
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-xs);
+  color: var(--lore-amber-light);
+}
+
+.attachment-chip-remove {
+  background: none;
+  border: none;
+  color: var(--lore-text-secondary);
+  cursor: pointer;
+  font-size: var(--lore-text-base);
+  line-height: 1;
+  padding: 0;
+}
+
+.attachment-chip-remove:hover {
+  color: var(--lore-white);
+}
+
+.composer-row {
+  max-width: var(--lore-content-width);
+  margin: 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--lore-space-3);
+}
+
+/* Fitts's Law: the two actions someone repeats constantly (attach,
+   send) get real hit targets, not compact icon-sized buttons. */
+.composer-attach {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  font-size: var(--lore-text-xl);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.composer-input {
+  flex: 1;
+  resize: none;
+  max-height: 200px;
+}
+
+.composer-send {
+  flex-shrink: 0;
+  height: 44px;
+}
+
+.composer-send:disabled,
+.composer-attach:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Severity findings, reusing the shared .lore-badge classes as-is ── */
+
+.finding-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lore-space-2);
+  margin-top: var(--lore-space-2);
+}
+
+.finding-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--lore-space-3);
+}
+
+@media (max-width: 640px) {
+  .app-header { padding: var(--lore-space-3) var(--lore-space-4); }
+  .chat-main { padding: var(--lore-space-4); }
+  .composer { padding: var(--lore-space-3) var(--lore-space-4) var(--lore-space-4); }
+  .message { max-width: 92%; }
+}
