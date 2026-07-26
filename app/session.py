@@ -147,6 +147,7 @@ class Attachment:
     file_type: str  # "docx" or "pdf"
     file_base64: str
     uploaded_at: float = field(default_factory=time.monotonic)
+    extracted_text: Optional[str] = None  # T-0.1: cached raw text, set once ingest_document succeeds
 
 
 @dataclass

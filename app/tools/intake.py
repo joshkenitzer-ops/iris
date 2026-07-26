@@ -22,9 +22,9 @@ import io
 import logging
 from typing import List
 
-from app.config import EXTRACTION_CONFIDENCE
+from app.config import EXTRACTION_CONFIDENCE, MAX_INGEST_TEXT_CHARS
 from app.enforcement import EnforcementKind, ToolResult, registry, tool
-from app.session import Session
+from app.session import Attachment, Session
 from app.untrusted_text import wrap_untrusted
 
 logger = logging.getLogger("iris.intake")
@@ -81,16 +81,16 @@ def ingest_document(attachment_id: str, session: Session) -> ToolResult:
         )
 
     if attachment.file_type == "docx":
-        return _ingest_docx(raw)
+        return _ingest_docx(raw, attachment)
     if attachment.file_type == "pdf":
-        return _ingest_pdf(raw)
+        return _ingest_pdf(raw, attachment)
     return ToolResult(
         passed=False,
         findings=[{"severity": "Critical", "issue": f"Unsupported file_type '{attachment.file_type}'.", "fix": "Use 'docx' or 'pdf'."}],
     )
 
 
-def _ingest_docx(raw: bytes) -> ToolResult:
+def _ingest_docx(raw: bytes, attachment: Attachment) -> ToolResult:
     from docx import Document  # already a hard dependency, via app.tools.docx_render/docx_checks
 
     document = Document(io.BytesIO(raw))
@@ -123,6 +123,11 @@ def _ingest_docx(raw: bytes) -> ToolResult:
             ],
             data={"extracted_text": "", "paragraph_count": 0},
         )
+    # Cached raw (unwrapped, same truncation as the model-facing copy) so
+    # run_batch_checks can resolve `text` server-side from attachment_id
+    # instead of the model having to paste tens of thousands of characters
+    # back into a tool call just to name a document it already extracted.
+    attachment.extracted_text = text[:MAX_INGEST_TEXT_CHARS]
     return ToolResult(
         passed=True,
         data={
@@ -133,7 +138,7 @@ def _ingest_docx(raw: bytes) -> ToolResult:
     )
 
 
-def _ingest_pdf(raw: bytes) -> ToolResult:
+def _ingest_pdf(raw: bytes, attachment: Attachment) -> ToolResult:
     try:
         from pypdf import PdfReader  # lazy import: PDF support is optional, must not break docx-only startup
     except ImportError:
@@ -171,6 +176,7 @@ def _ingest_pdf(raw: bytes) -> ToolResult:
             ],
             data={"extracted_text": "", "page_count": len(reader.pages)},
         )
+    attachment.extracted_text = text[:MAX_INGEST_TEXT_CHARS]
     return ToolResult(
         passed=True,
         data={
@@ -544,11 +550,14 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
     description=(
         "Runs multiple TOOL-kind checks in a single harness call, "
         "eliminating per-check model round trips. "
-        "IMPORTANT: never pass raw docx_base64 bytes in inputs — "
-        "pass attachment_id and the harness resolves bytes server-side, "
-        "keeping large binary payloads out of model context entirely. "
+        "IMPORTANT: never pass raw docx_base64 bytes or a pasted-back copy "
+        "of extracted_text in inputs — pass attachment_id and the harness "
+        "resolves both docx bytes and cached extracted text server-side, "
+        "keeping large payloads out of model context and out of the "
+        "model's own output entirely. "
         "For Phase 1 (Audit): tool_ids=[T-3.1,T-3.3,T-3.4,T-3.5,T-3.6,T-3.7,T-3.8], "
-        "inputs={text: <extracted_text>}. "
+        "inputs={attachment_id: <id>} (requires ingest_document to have run "
+        "on that attachment first, so the text is cached). "
         "For Phase 4 (Formatting): tool_ids=[T-4.1,T-4.2,T-4.3,T-4.4,T-4.9], "
         "inputs={attachment_id: <id>}. "
         "For Phase 8 (Final Review): tool_ids=[T-8.5,T-8.6,T-8.7,T-8.12,T-8.14,T-8.15], "
@@ -585,8 +594,14 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
     """Harness-side batch execution with two payload protections:
 
     1. attachment_id resolution: if inputs has attachment_id, harness
-       resolves docx bytes from session store and substitutes them
-       before dispatching — model never handles raw base64.
+       resolves docx bytes AND cached extracted text (set by
+       ingest_document) from session store and substitutes them before
+       dispatching — model never handles raw base64, and never has to
+       paste extracted_text back into a tool call just to name the
+       document it came from. Each per-tool dispatch (dispatch_by_id)
+       already filters inputs down to the keys that tool's function
+       signature accepts, so resolving both from one attachment_id is
+       safe even though only one is relevant per tool.
     2. data stripping: only passed/findings returned, never tool data
        payloads (candidate lists, extracted text, scores)."""
     from app.enforcement import EnforcementKind as EK
@@ -616,9 +631,13 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
             }],
         )
 
-    # Resolve attachment_id -> docx_base64 server-side if provided
+    # Resolve attachment_id -> docx_base64 and/or cached extracted_text
+    # server-side if provided. Both are attempted from the same id since
+    # dispatch_by_id filters inputs to whatever each tool's signature
+    # actually accepts (T-3.x text checks read `text`, T-4.x/T-8.x docx
+    # checks read `docx_base64`) — there is no cross-contamination.
     inputs = dict(inputs)
-    if "attachment_id" in inputs and "docx_base64" not in inputs:
+    if "attachment_id" in inputs:
         attachment_id = inputs.pop("attachment_id")
         attachment = session.get_attachment(attachment_id)
         if attachment is None:
@@ -630,7 +649,10 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
                     "fix": "Upload the file first and use the returned attachment_id.",
                 }],
             )
-        inputs["docx_base64"] = attachment.file_base64
+        if "docx_base64" not in inputs:
+            inputs["docx_base64"] = attachment.file_base64
+        if "text" not in inputs and attachment.extracted_text is not None:
+            inputs["text"] = attachment.extracted_text
 
     per_tool = []
     all_passed = True
