@@ -42,6 +42,12 @@ window.addEventListener("load", async function () {
       );
     }
     await Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
+    // Fetch app config (non-Clerk fields like feedback_url) in the
+    // background — not load-blocking since Clerk is already up.
+    try {
+      const cfgRes = await fetch("/config");
+      if (cfgRes.ok) { window._irisConfig = await cfgRes.json(); }
+    } catch (_) { /* non-fatal — feedback form just shows unavailable */ }
   } catch (err) {
     showBootError(err);
     return;
@@ -150,11 +156,15 @@ async function initApp() {
   document.getElementById("new-session-btn").addEventListener("click", startNewSession);
   document.getElementById("start-session-btn").addEventListener("click", startFirstSession);
 
-  // Help modal wiring
+  // Help modal wiring. The modal has no [hidden] attribute — that
+  // attribute triggers [hidden]{display:none!important} which fights
+  // the JS display:flex open state. Instead the modal starts at
+  // display:none via its own CSS rule and we toggle inline style.
   const helpBtn = document.getElementById("help-btn");
   const helpModal = document.getElementById("help-modal");
   const helpClose = document.getElementById("help-modal-close");
   const backdrop = helpModal.querySelector(".help-modal-backdrop");
+  let feedbackLoaded = false;
 
   function openHelp() { helpModal.style.display = "flex"; }
   function closeHelp() { helpModal.style.display = "none"; }
@@ -165,6 +175,40 @@ async function initApp() {
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && helpModal.style.display === "flex") closeHelp();
   });
+
+  // Tab switching
+  document.querySelectorAll(".help-tab").forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      document.querySelectorAll(".help-tab").forEach(function (t) { t.classList.remove("active"); });
+      document.querySelectorAll(".help-tab-content").forEach(function (c) { c.style.display = "none"; });
+      tab.classList.add("active");
+      const target = document.getElementById("help-tab-" + tab.dataset.tab);
+      if (target) target.style.display = "flex";
+
+      // Lazy-load the feedback iframe the first time the tab opens
+      if (tab.dataset.tab === "feedback" && !feedbackLoaded) {
+        feedbackLoaded = true;
+        loadFeedbackFrame();
+      }
+    });
+  });
+
+  function loadFeedbackFrame() {
+    const container = document.getElementById("feedback-frame-container");
+    const url = window._irisConfig && window._irisConfig.feedback_url;
+    if (url) {
+      const iframe = document.createElement("iframe");
+      iframe.src = url;
+      iframe.title = "Iris feedback form";
+      iframe.setAttribute("frameborder", "0");
+      iframe.setAttribute("marginheight", "0");
+      iframe.setAttribute("marginwidth", "0");
+      container.innerHTML = "";
+      container.appendChild(iframe);
+    } else {
+      container.innerHTML = '<div class="feedback-unavailable">Feedback form coming soon.</div>';
+    }
+  }
   // Don't create a session eagerly — wait for the user to click
   // "Start a session." The composer stays hidden until that click.
 }

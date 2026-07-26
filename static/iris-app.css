@@ -429,7 +429,7 @@ body {
   position: fixed;
   inset: 0;
   z-index: 100;
-  display: flex;
+  display: none; /* opened via style.display='flex' in JS; no [hidden] attr since !important fights it */
   align-items: center;
   justify-content: center;
 }
@@ -550,6 +550,75 @@ body {
 
 .help-modal-profile-note strong {
   color: var(--lore-amber-light);
+}
+
+/* Help modal tabs */
+.help-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--lore-border);
+  margin: 0 calc(-1 * var(--lore-space-8));
+  padding: 0 var(--lore-space-8);
+}
+
+.help-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--lore-text-secondary);
+  font-family: var(--lore-font-body);
+  font-size: var(--lore-text-sm);
+  font-weight: var(--lore-weight-medium);
+  padding: var(--lore-space-3) var(--lore-space-4);
+  cursor: pointer;
+  transition: var(--lore-transition);
+  margin-bottom: -1px;
+}
+
+.help-tab:hover {
+  color: var(--lore-text-primary);
+}
+
+.help-tab.active {
+  color: var(--lore-amber-light);
+  border-bottom-color: var(--lore-amber);
+}
+
+.help-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--lore-space-4);
+}
+
+/* Feedback tab */
+.feedback-frame-container {
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+.feedback-frame-container iframe {
+  border: none;
+  flex: 1;
+  min-height: 480px;
+  border-radius: var(--lore-radius-md);
+}
+
+.feedback-loading {
+  color: var(--lore-text-muted);
+  font-size: var(--lore-text-sm);
+  text-align: center;
+  padding: var(--lore-space-12) 0;
+}
+
+.feedback-unavailable {
+  background: var(--lore-surface-base);
+  border: 1px solid var(--lore-border);
+  border-radius: var(--lore-radius-md);
+  padding: var(--lore-space-8);
+  text-align: center;
+  color: var(--lore-text-secondary);
+  font-size: var(--lore-text-sm);
 }
 
 /* Download cards: visually distinct from chat bubbles, reads as

@@ -62,72 +62,90 @@
     </div>
     <span class="lore-display app-wordmark">Iris</span>
     <div class="header-actions">
+      <button id="feedback-btn" class="lore-btn-ghost header-feedback-btn">Feedback</button>
       <button id="help-btn" class="help-btn" aria-label="How Iris works" title="How Iris works">?</button>
       <button id="new-session-btn" class="lore-btn-ghost">New session</button>
       <div id="user-button-container"></div>
     </div>
   </header>
 
-  <!-- Pipeline reference modal -->
-  <div id="help-modal" class="help-modal" hidden role="dialog" aria-modal="true" aria-label="How Iris works">
+  <!-- Help modal: two tabs — pipeline walkthrough and feedback form -->
+  <div id="help-modal" class="help-modal" role="dialog" aria-modal="true" aria-label="How Iris works">
     <div class="help-modal-backdrop"></div>
     <div class="help-modal-panel">
       <button class="help-modal-close" id="help-modal-close" aria-label="Close">&times;</button>
-      <h2 class="lore-display help-modal-title">How Iris Works</h2>
-      <p class="help-modal-intro">Iris takes you from your existing resume to a tailored, verified application package. Here's what happens at each step.</p>
-      <ol class="pipeline-steps">
-        <li class="pipeline-step">
-          <div class="step-header"><span class="step-number">0</span><span class="step-name">Starting Point</span></div>
-          <div class="step-you"><strong>You:</strong> Upload your resume, paste your career history, or start from scratch.</div>
-          <div class="step-iris"><strong>Iris:</strong> Extracts your career history and organizes it by role and time period.</div>
-          <div class="step-output">Output: your career content ready to audit.</div>
-        </li>
-        <li class="pipeline-step">
-          <div class="step-header"><span class="step-number">1</span><span class="step-name">Audit</span></div>
-          <div class="step-you"><strong>You:</strong> Review findings and decide what to address.</div>
-          <div class="step-iris"><strong>Iris:</strong> Runs an adversarial audit across five dimensions: content gaps, AI-sounding language, voice, formatting, and structure.</div>
-          <div class="step-output">Output: a prioritized list of findings before anything changes.</div>
-        </li>
-        <li class="pipeline-step">
-          <div class="step-header"><span class="step-number">2</span><span class="step-name">Master Resume Build</span></div>
-          <div class="step-you"><strong>You:</strong> Provide missing context. Approve each section.</div>
-          <div class="step-iris"><strong>Iris:</strong> Drafts bullets in bold-lead format. Locks every approved fact into your registry.</div>
-          <div class="step-output">Output: your master resume — the source of truth, not a document you send.</div>
-        </li>
-        <li class="pipeline-step">
-          <div class="step-header"><span class="step-number">3–4</span><span class="step-name">Slop &amp; Formatting Checks</span></div>
-          <div class="step-you"><strong>You:</strong> Nothing — findings surface automatically.</div>
-          <div class="step-iris"><strong>Iris:</strong> Checks for AI-sounding language patterns, banned vocabulary, em dashes, date formatting, and ATS compliance on every draft.</div>
-          <div class="step-output">Output: inline findings surfaced as you work.</div>
-        </li>
-        <li class="pipeline-step">
-          <div class="step-header"><span class="step-number">5</span><span class="step-name">Fit Check</span></div>
-          <div class="step-you"><strong>You:</strong> Paste a job description. Decide whether to proceed.</div>
-          <div class="step-iris"><strong>Iris:</strong> Maps the role's requirements against your registry. Surfaces strong matches and names real gaps honestly.</div>
-          <div class="step-output">Output: a fit summary. Iris never blocks you from applying — you decide.</div>
-        </li>
-        <li class="pipeline-step">
-          <div class="step-header"><span class="step-number">6</span><span class="step-name">Tailoring</span></div>
-          <div class="step-you"><strong>You:</strong> Review and approve the tailored resume.</div>
-          <div class="step-iris"><strong>Iris:</strong> Reorders and reframes your strongest matching facts. Rewrites your headline and summary for the role. Adds nothing that isn't already in your registry.</div>
-          <div class="step-output">Output: a tailored resume draft.</div>
-        </li>
-        <li class="pipeline-step">
-          <div class="step-header"><span class="step-number">7</span><span class="step-name">Cover Letter</span></div>
-          <div class="step-you"><strong>You:</strong> Review the gap language. Approve the closing.</div>
-          <div class="step-iris"><strong>Iris:</strong> Writes a paired cover letter built on your two or three strongest matched requirements. Names real gaps directly — never hides them.</div>
-          <div class="step-output">Output: a cover letter matched to the tailored resume.</div>
-        </li>
-        <li class="pipeline-step">
-          <div class="step-header"><span class="step-number">8</span><span class="step-name">Final Review</span></div>
-          <div class="step-you"><strong>You:</strong> Review findings. Approve the final package.</div>
-          <div class="step-iris"><strong>Iris:</strong> Runs a three-tier programmatic check: critical claims, full slop scan, and a final read as an experienced hiring reviewer.</div>
-          <div class="step-output">Output: your final resume and cover letter, ready to download and submit.</div>
-        </li>
-      </ol>
-      <div class="help-modal-profile-note">
-        <strong>Iris Profile</strong> — at the end of a session, download your Iris Profile. Upload it at the start of your next session and Iris will remember everything: your locked facts, dismissed findings, and package history. Without it, you start from scratch.
+
+      <div class="help-tabs">
+        <button class="help-tab active" data-tab="walkthrough">How It Works</button>
+        <button class="help-tab" data-tab="feedback">Give Feedback</button>
       </div>
+
+      <!-- Tab: How It Works -->
+      <div id="help-tab-walkthrough" class="help-tab-content">
+        <p class="help-modal-intro">Iris takes you from your existing resume to a tailored, verified application package. Here's what happens at each step.</p>
+        <ol class="pipeline-steps">
+          <li class="pipeline-step">
+            <div class="step-header"><span class="step-number">0</span><span class="step-name">Starting Point</span></div>
+            <div class="step-you"><strong>You:</strong> Upload your resume, paste your career history, or start from scratch.</div>
+            <div class="step-iris"><strong>Iris:</strong> Extracts your career history and organizes it by role and time period.</div>
+            <div class="step-output">Output: your career content, ready to audit.</div>
+          </li>
+          <li class="pipeline-step">
+            <div class="step-header"><span class="step-number">1</span><span class="step-name">Audit</span></div>
+            <div class="step-you"><strong>You:</strong> Review findings and decide what to address.</div>
+            <div class="step-iris"><strong>Iris:</strong> Runs an adversarial audit across five dimensions: content gaps, AI-sounding language, voice, formatting, and structure.</div>
+            <div class="step-output">Output: a prioritized list of findings before anything changes.</div>
+          </li>
+          <li class="pipeline-step">
+            <div class="step-header"><span class="step-number">2</span><span class="step-name">Master Resume Build</span></div>
+            <div class="step-you"><strong>You:</strong> Provide missing context. Approve each section.</div>
+            <div class="step-iris"><strong>Iris:</strong> Drafts bullets in bold-lead format. Locks every approved fact into your registry.</div>
+            <div class="step-output">Output: your master resume — the source of truth, not a document you send.</div>
+          </li>
+          <li class="pipeline-step">
+            <div class="step-header"><span class="step-number">3–4</span><span class="step-name">Slop &amp; Formatting Checks</span></div>
+            <div class="step-you"><strong>You:</strong> Nothing — findings surface automatically.</div>
+            <div class="step-iris"><strong>Iris:</strong> Checks for AI-sounding language, banned vocabulary, em dashes, date formatting, and ATS compliance on every draft.</div>
+            <div class="step-output">Output: inline findings surfaced as you work.</div>
+          </li>
+          <li class="pipeline-step">
+            <div class="step-header"><span class="step-number">5</span><span class="step-name">Fit Check</span></div>
+            <div class="step-you"><strong>You:</strong> Paste a job description. Decide whether to proceed.</div>
+            <div class="step-iris"><strong>Iris:</strong> Maps the role's requirements against your registry. Surfaces strong matches and names real gaps honestly.</div>
+            <div class="step-output">Output: a fit summary. Iris never blocks you from applying — you decide.</div>
+          </li>
+          <li class="pipeline-step">
+            <div class="step-header"><span class="step-number">6</span><span class="step-name">Tailoring</span></div>
+            <div class="step-you"><strong>You:</strong> Review and approve the tailored resume.</div>
+            <div class="step-iris"><strong>Iris:</strong> Reorders and reframes your strongest matching facts. Rewrites your headline and summary for the role. Adds nothing that isn't already in your registry.</div>
+            <div class="step-output">Output: a tailored resume draft.</div>
+          </li>
+          <li class="pipeline-step">
+            <div class="step-header"><span class="step-number">7</span><span class="step-name">Cover Letter</span></div>
+            <div class="step-you"><strong>You:</strong> Review the gap language. Approve the closing.</div>
+            <div class="step-iris"><strong>Iris:</strong> Writes a paired cover letter built on your strongest matched requirements. Names real gaps directly — never hides them.</div>
+            <div class="step-output">Output: a cover letter matched to the tailored resume.</div>
+          </li>
+          <li class="pipeline-step">
+            <div class="step-header"><span class="step-number">8</span><span class="step-name">Final Review</span></div>
+            <div class="step-you"><strong>You:</strong> Review findings. Approve the final package.</div>
+            <div class="step-iris"><strong>Iris:</strong> Runs a three-tier programmatic check: critical claims, full slop scan, and a final read as an experienced hiring reviewer.</div>
+            <div class="step-output">Output: your final resume and cover letter, ready to download and submit.</div>
+          </li>
+        </ol>
+        <div class="help-modal-profile-note">
+          <strong>Iris Profile</strong> — at the end of a session, download your Iris Profile. Upload it at the start of your next session and Iris will remember everything: your locked facts, dismissed findings, and package history. Without it, you start from scratch.
+        </div>
+      </div>
+
+      <!-- Tab: Feedback -->
+      <div id="help-tab-feedback" class="help-tab-content" style="display:none">
+        <p class="help-modal-intro">Iris is early. Your feedback directly shapes what gets built next. Takes about 3 minutes.</p>
+        <div id="feedback-frame-container" class="feedback-frame-container">
+          <p class="feedback-loading">Loading feedback form...</p>
+        </div>
+      </div>
+
     </div>
   </div>
 

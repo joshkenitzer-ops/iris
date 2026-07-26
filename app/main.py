@@ -327,6 +327,7 @@ def frontend_config() -> Dict[str, str]:
     return {
         "clerk_publishable_key": os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip(),
         "clerk_frontend_host": _clerk_frontend_host(),
+        "feedback_url": os.environ.get("IRIS_FEEDBACK_URL", "").strip(),
     }
 
 
