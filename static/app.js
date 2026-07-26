@@ -418,6 +418,18 @@ async function consumeChatStream(response) {
   let buffer = "";
   let sawTerminalEvent = false;
 
+  // Live-streamed assistant text for this turn. Before "text_delta"
+  // existed, the UI had nothing to show between the last tool_call/
+  // tool_result and the final "done" event - so a slow-but-healthy
+  // response generating several thousand tokens looked identical to a
+  // hung one, for as long as it took to finish. streamingEl is created
+  // on the first delta and grown in place; "done" always overwrites it
+  // with the authoritative final text rather than trusting the
+  // accumulated deltas, since a max_tokens cutoff notice is appended
+  // server-side after streaming ends and was never itself streamed.
+  let streamingEl = null;
+  let streamingBuffer = "";
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -443,16 +455,33 @@ async function consumeChatStream(response) {
         showStatus(event.message);
       } else if (event.type === "tool_call") {
         showStatus("Running: " + event.tool);
+      } else if (event.type === "text_delta") {
+        if (!streamingEl) {
+          hideStatus();
+          streamingEl = appendStreamingMessage();
+        }
+        streamingBuffer += event.text;
+        streamingEl.innerHTML = renderMarkdown(streamingBuffer);
+        streamingEl.scrollIntoView({ behavior: "smooth", block: "end" });
       } else if (event.type === "file_ready") {
         appendDownloadButton(event.filename, event.content_type, event.data_base64);
       } else if (event.type === "done") {
         sawTerminalEvent = true;
         hideStatus();
-        appendMessage("assistant", event.text);
+        if (streamingEl) {
+          streamingEl.innerHTML = renderMarkdown(event.text);
+          streamingEl.scrollIntoView({ behavior: "smooth", block: "end" });
+        } else {
+          appendMessage("assistant", event.text);
+        }
+        streamingEl = null;
+        streamingBuffer = "";
       } else if (event.type === "error") {
         sawTerminalEvent = true;
         hideStatus();
         appendMessage("system", event.detail || "Something went wrong on Iris's end. Try again in a moment.");
+        streamingEl = null;
+        streamingBuffer = "";
       }
       // "tool_result" carries no separate UI treatment: the tool_call
       // event already said what was running, and the next status or
@@ -543,6 +572,18 @@ function appendMessage(role, text) {
   }
   list.appendChild(el);
   el.scrollIntoView({ behavior: "smooth", block: "end" });
+}
+
+function appendStreamingMessage() {
+  // Empty assistant bubble, grown in place as "text_delta" events
+  // arrive. Separate from appendMessage because that one sets content
+  // and returns nothing - this needs the element handle back so
+  // consumeChatStream can keep updating the same node.
+  const list = document.getElementById("message-list");
+  const el = document.createElement("div");
+  el.className = "message message-assistant";
+  list.appendChild(el);
+  return el;
 }
 
 function appendDownloadButton(filename, contentType, dataBase64) {

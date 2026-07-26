@@ -593,6 +593,31 @@ class TestChatEndpoint(_AuthOverriddenTestCase):
         events = _parse_sse(response.text)
         self.assertEqual([e["type"] for e in events], ["status", "tool_call", "tool_result", "done"])
 
+    def test_text_delta_events_pass_through_to_the_client(self) -> None:
+        """Regression coverage for the streaming-latency fix: the client
+        needs to see "text_delta" events as the model writes, not just
+        a silent gap until "done" - main.py doesn't special-case this
+        event type, it just needs to not drop it on the way through."""
+        session_id = self._create_session()
+        scripted = [
+            {"type": "text_delta", "text": "Hel"},
+            {"type": "text_delta", "text": "lo the"},
+            {"type": "text_delta", "text": "re."},
+            {"type": "done", "text": "Hello there.", "messages": []},
+        ]
+        with patch.object(self.module, "stream_turn", side_effect=_fake_stream_turn(scripted)):
+            response = self.client.post(f"/sessions/{session_id}/chat", json={"message": "hi"})
+        events = _parse_sse(response.text)
+        self.assertEqual(
+            [e for e in events if e["type"] == "text_delta"],
+            [
+                {"type": "text_delta", "text": "Hel"},
+                {"type": "text_delta", "text": "lo the"},
+                {"type": "text_delta", "text": "re."},
+            ],
+        )
+        self.assertEqual(events[-1], {"type": "done", "text": "Hello there."})
+
     def test_message_over_max_length_is_422(self) -> None:
         session_id = self._create_session()
         response = self.client.post(

@@ -366,8 +366,19 @@ def stream_turn(
       {"type": "status", "message": str}
       {"type": "tool_call", "tool": str}
       {"type": "tool_result", "tool": str, "passed": bool}
+      {"type": "text_delta", "text": str}
       {"type": "done", "text": str, "messages": list}
       {"type": "error", "detail": str}
+
+    "text_delta" fires as the model writes each response, including on
+    intermediate tool_use turns if the model produces any preamble text
+    (the spec asks it not to, but this surfaces it live either way
+    rather than silently dropping it as before). The final "done"
+    event's "text" is still the complete, authoritative text - concat-
+    enating every "text_delta" seen since the last "done"/tool_result
+    should equal it, but a client that only renders "done" still gets a
+    fully correct transcript, it just waits for it instead of watching
+    it arrive.
 
     An "error" or "done" event is always the last one yielded. Known
     failure modes (UpstreamModelError, ToolLoopExhausted) are caught
@@ -448,6 +459,18 @@ def stream_turn(
                 messages=_with_cache_breakpoint(working_messages),
                 output_config={"effort": EFFORT},
             ) as message_stream:
+                # Consuming text_stream here, instead of jumping straight
+                # to get_final_message(), is what actually gets tokens to
+                # the browser as the model writes them. Before this, every
+                # SSE event the client saw stopped at the last tool_call/
+                # tool_result while this call was in flight - so a slow
+                # but healthy multi-thousand-token response looked
+                # identical to a hang, for as long as it took to finish.
+                # get_final_message() after the loop is free: the stream
+                # is already fully consumed and accumulated internally, so
+                # it returns immediately rather than blocking again.
+                for text in message_stream.text_stream:
+                    yield {"type": "text_delta", "text": text}
                 response = message_stream.get_final_message()
         except anthropic.APIError as exc:
             status = getattr(exc, "status_code", None)
