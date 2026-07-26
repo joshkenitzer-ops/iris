@@ -376,7 +376,7 @@ async function sendMessage() {
   input.style.height = "auto";
   clearAttachmentChip();
   setComposerDisabled(true);
-  showStatus("Thinking...");
+  showStatus("Sending...");  // immediately replaced by server's first status event
 
   try {
     const response = await withSessionRetry(function (sessionId) {

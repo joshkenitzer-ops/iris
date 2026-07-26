@@ -357,12 +357,14 @@ def stream_turn(
             len(tools),
         )
 
-        # Pick a status message that reflects what's actually happening
-        # rather than always saying "Thinking..." — iteration 0 is the
-        # initial response to the user's message; subsequent iterations
-        # are follow-up rounds after tool results come back.
+        # Pick a status message that reflects what's actually happening.
+        # Iteration 0: emit a context-aware message based on what the
+        # user asked. Subsequent iterations: emit nothing — the
+        # tool_call event already updates the status to the tool name
+        # as each tool fires. Emitting "Continuing..." here was
+        # overwriting that useful information with a static string
+        # every time the model looped back for another API call.
         if iteration == 0:
-            # Check the last user message for context clues
             last_user = next(
                 (m.get("content", "") for m in reversed(working_messages) if m.get("role") == "user"),
                 "",
@@ -380,10 +382,8 @@ def stream_turn(
                 status_msg = "Building your master resume..."
             else:
                 status_msg = "Working on it..."
-        else:
-            status_msg = "Continuing..."
+            yield {"type": "status", "message": status_msg}
 
-        yield {"type": "status", "message": status_msg}
         iteration += 1
 
         try:
