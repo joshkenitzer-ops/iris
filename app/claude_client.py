@@ -137,7 +137,19 @@ def run_turn(
         )
 
         try:
-            response = client.messages.create(
+            # A large max_tokens (raised to 32000 on 2026-07-26 to give
+            # Sonnet 5's default adaptive thinking real headroom, see
+            # config.py) pushes the SDK's own worst-case-duration
+            # estimate past its 10-minute non-streaming ceiling, at
+            # which point .create() refuses outright with
+            # "Streaming is required for operations that may take
+            # longer than 10 minutes" rather than attempting the call.
+            # .messages.stream(...).get_final_message() sidesteps that
+            # by having the SDK stream the response internally, while
+            # still handing back the exact same accumulated Message
+            # object .create() used to return - nothing below this
+            # line needs to know the difference.
+            with client.messages.stream(
                 model=MODEL,
                 max_tokens=max_tokens,
                 system=[
@@ -149,7 +161,8 @@ def run_turn(
                 ],
                 tools=tools,
                 messages=working_messages,
-            )
+            ) as message_stream:
+                response = message_stream.get_final_message()
         except anthropic.APIError as exc:
             status = getattr(exc, "status_code", None)
             logger.exception("Anthropic API call failed (status=%s)", status)
@@ -313,7 +326,17 @@ def stream_turn(
         yield {"type": "status", "message": "Thinking..."}
 
         try:
-            response = client.messages.create(
+            # See the matching comment in run_turn: a large max_tokens
+            # pushes the SDK's own duration estimate past its
+            # 10-minute non-streaming ceiling, and .create() refuses
+            # outright rather than attempting the call. This is the
+            # exact exception that reached production on 2026-07-26
+            # the morning after MAX_RESPONSE_TOKENS was raised to
+            # 32000. .messages.stream(...).get_final_message() fixes
+            # it by having the SDK stream the response internally,
+            # while still returning the same accumulated Message
+            # object .create() used to.
+            with client.messages.stream(
                 model=MODEL,
                 max_tokens=max_tokens,
                 system=[
@@ -325,7 +348,8 @@ def stream_turn(
                 ],
                 tools=tools,
                 messages=working_messages,
-            )
+            ) as message_stream:
+                response = message_stream.get_final_message()
         except anthropic.APIError as exc:
             status = getattr(exc, "status_code", None)
             logger.exception("Anthropic API call failed (status=%s)", status)
