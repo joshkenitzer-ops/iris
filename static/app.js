@@ -127,7 +127,7 @@ async function withSessionRetry(makeRequest) {
     return response;
   }
   currentSessionId = await createNewSession();
-  document.getElementById("empty-state").hidden = true;
+  document.getElementById("empty-state").style.display = "none";
   document.getElementById("composer").hidden = false;
   appendMessage(
     "system",
@@ -160,14 +160,14 @@ async function startFirstSession() {
   try {
     currentSessionId = await createNewSession();
     // Swap the empty state for the working surface
-    document.getElementById("empty-state").hidden = true;
+    document.getElementById("empty-state").style.display = "none";
     document.getElementById("composer").hidden = false;
     document.getElementById("message-input").focus();
   } catch (err) {
     btn.disabled = false;
     btn.textContent = "Start a session";
     appendMessage("error", "Could not start a session. Check your connection and try again.");
-    document.getElementById("empty-state").hidden = true;
+    document.getElementById("empty-state").style.display = "none";
     document.getElementById("composer").hidden = false;
   }
 }
@@ -203,7 +203,7 @@ async function startNewSession() {
   try {
     clearAttachmentChip();
     document.getElementById("message-list").innerHTML = "";
-    document.getElementById("empty-state").hidden = true;
+    document.getElementById("empty-state").style.display = "none";
     document.getElementById("composer").hidden = false;
     currentSessionId = await createNewSession();
     appendMessage("system", "Started a new session.");
