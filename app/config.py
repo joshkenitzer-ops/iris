@@ -98,11 +98,13 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_ATTACHMENTS_PER_SESSION = 10  # oldest evicted first past this
 
 # Maximum tokens in a single model response. Raised from 4096 on
-# 2026-07-26: an audit that enumerates findings across five dimensions
+# 2026-07-26 to 8192, then to 16000 after Josh confirmed from the
+# earlier Hermes build that a full master resume needs roughly that.
+# An audit that enumerates findings across five dimensions
 # routinely runs past 4096, and hitting the cap produced a truncated
 # (sometimes entirely empty) reply. Env-overridable so this can be
 # tuned without a code change.
-MAX_RESPONSE_TOKENS = int(os.environ.get("IRIS_MAX_RESPONSE_TOKENS", "8192"))
+MAX_RESPONSE_TOKENS = int(os.environ.get("IRIS_MAX_RESPONSE_TOKENS", "16000"))
 
 # Per-user /chat rate limit: max calls within the rolling window.
 CHAT_RATE_LIMIT_CALLS = 30
