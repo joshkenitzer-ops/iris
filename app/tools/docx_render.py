@@ -29,6 +29,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 
 from app.config import BODY_FONT_SIZE_RANGE
+from app.session import Session
 
 DEFAULT_FONT = "Calibri"
 DEFAULT_BODY_SIZE = Pt(BODY_FONT_SIZE_RANGE[0] + 1)  # 11pt, mid-range of the 10-12pt band
@@ -92,7 +93,11 @@ from app.enforcement import EnforcementKind, ToolResult, tool
     description=(
         "Renders an ordered list of (heading, body) sections into a "
         "docx file: 1-inch margins, an allowed font, no layout "
-        "decisions beyond what's given. Returns the file as base64. "
+        "decisions beyond what's given. Stores the file server-side "
+        "and returns a file_id the user can download from the UI — "
+        "the model never sends raw docx bytes to the user directly. "
+        "Also requires a filename that already passed "
+        "check_filename_pattern (T-4.13). "
         "Does not decide section order or content, those come from "
         "earlier phases."
     ),
@@ -108,12 +113,23 @@ from app.enforcement import EnforcementKind, ToolResult, tool
                     "required": ["heading", "body"],
                 },
             },
+            "filename": {"type": "string", "description": "The validated output filename, e.g. Kenitzer_Joshua_Resume_Oracle_SrIDDev_V1.docx"},
             "font_name": {"type": "string"},
         },
-        "required": ["sections"],
+        "required": ["sections", "filename"],
     },
+    needs_session=True,
 )
-def render_resume_docx_tool(sections: list, font_name: str = DEFAULT_FONT) -> ToolResult:
+def render_resume_docx_tool(sections: list, filename: str, session: Session, font_name: str = DEFAULT_FONT) -> ToolResult:
     pairs = [(s["heading"], s["body"]) for s in sections]
     docx_bytes = generate_resume_docx(pairs, font_name=font_name)
-    return ToolResult(passed=True, data={"docx_base64": base64.b64encode(docx_bytes).decode("ascii")})
+    b64 = base64.b64encode(docx_bytes).decode("ascii")
+    rendered = session.add_rendered_file(
+        filename=filename,
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        data_base64=b64,
+    )
+    return ToolResult(
+        passed=True,
+        data={"file_id": rendered.id, "filename": rendered.filename},
+    )

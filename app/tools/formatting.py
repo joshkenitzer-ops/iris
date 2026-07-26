@@ -171,10 +171,10 @@ def check_section_header(header_text: str) -> ToolResult:
 
 
 _TAILORED_RESUME_RE = re.compile(
-    r"^[\w'-]+_[\w'-]+_Resume_[\w'-]+_[\w'-]+_v?\d+\.docx$"
+    r"^[\w'-]+_[\w'-]+_Resume_[\w'-]+_[\w'-]+_[Vv]?\d+\.docx$"
 )
 _COVER_LETTER_RE = re.compile(
-    r"^[\w'-]+_[\w'-]+_CoverLetter_[\w'-]+_[\w'-]+_v?\d+\.docx$"
+    r"^[\w'-]+_[\w'-]+_CoverLetter_[\w'-]+_[\w'-]+_[Vv]?\d+\.docx$"
 )
 _MASTER_RE = re.compile(r"^[\w'-]+_[\w'-]+_Resume_Master_\d{4}-\d{2}-\d{2}(_v?\d+)?\.docx$")
 

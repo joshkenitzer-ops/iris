@@ -331,7 +331,81 @@ body {
   cursor: not-allowed;
 }
 
-/* ── Severity findings, reusing the shared .lore-badge classes as-is ── */
+/* Download cards: visually distinct from chat bubbles, reads as
+   "something you act on" rather than a message. */
+.download-card {
+  align-self: flex-start;
+  max-width: var(--iris-work-width);
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--lore-space-4);
+  background: var(--lore-amber-ghost);
+  border: 1px solid var(--lore-amber-dim);
+  border-radius: var(--lore-radius-md);
+  padding: var(--lore-space-3) var(--lore-space-4);
+}
+
+.download-icon {
+  font-size: var(--lore-text-xl);
+  color: var(--lore-amber-light);
+  flex-shrink: 0;
+}
+
+.download-filename {
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-sm);
+  color: var(--lore-amber-light);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-btn {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 var(--lore-space-4);
+  font-size: var(--lore-text-sm);
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* Inline code in assistant messages */
+.message-assistant code {
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-sm);
+  background: var(--lore-surface-input);
+  border: 1px solid var(--lore-border);
+  border-radius: var(--lore-radius-sm);
+  padding: 1px 4px;
+}
+
+/* Markdown-rendered headings inside assistant messages */
+.message-assistant h3,
+.message-assistant h4,
+.message-assistant h5 {
+  font-family: var(--lore-font-display);
+  font-size: var(--lore-text-base);
+  font-weight: var(--lore-weight-semibold);
+  margin: var(--lore-space-3) 0 var(--lore-space-1);
+}
+
+.message-assistant ul {
+  margin: var(--lore-space-2) 0 var(--lore-space-2) var(--lore-space-4);
+}
+
+.message-assistant p {
+  margin-bottom: var(--lore-space-2);
+}
+
+.message-assistant hr {
+  border: none;
+  border-top: var(--lore-rule-dim);
+  margin: var(--lore-space-4) 0;
+}
 
 .finding-list {
   display: flex;

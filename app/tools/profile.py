@@ -54,15 +54,28 @@ def _build_payload(session: Session) -> Dict[str, Any]:
     name="export_iris_profile",
     description=(
         "Serializes the session's registry, dismissed findings, and "
-        "master fingerprint into a single downloadable markdown file "
-        "with an embedded JSON payload and checksum. One artifact, not "
-        "several; the user already carries the master docx separately."
+        "master fingerprint into a downloadable markdown file with an "
+        "embedded JSON payload and checksum. Stores the file "
+        "server-side and returns a file_id the user can download from "
+        "the UI — the profile is used to restore full session state at "
+        "the start of a future session, saving a full re-audit. The "
+        "filename should follow the pattern "
+        "[Last]_[First]_IrisProfile.md."
     ),
     kind=EnforcementKind.TOOL,
-    input_schema={"type": "object", "properties": {}},
+    input_schema={
+        "type": "object",
+        "properties": {
+            "filename": {
+                "type": "string",
+                "description": "e.g. Kenitzer_Joshua_IrisProfile.md",
+            }
+        },
+        "required": ["filename"],
+    },
     needs_session=True,
 )
-def export_iris_profile(session: Session) -> ToolResult:
+def export_iris_profile(filename: str, session: Session) -> ToolResult:
     payload = _build_payload(session)
     body = json.dumps(payload, indent=2, sort_keys=True)
     checksum = hashlib.sha256(body.encode("utf-8")).hexdigest()
@@ -71,7 +84,17 @@ def export_iris_profile(session: Session) -> ToolResult:
         f"Checksum: {checksum}\n\n"
         f"```json\n{body}\n```\n"
     )
-    return ToolResult(passed=True, data={"profile_markdown": markdown, "checksum": checksum})
+    import base64 as _b64
+    b64 = _b64.b64encode(markdown.encode("utf-8")).decode("ascii")
+    rendered = session.add_rendered_file(
+        filename=filename,
+        content_type="text/markdown",
+        data_base64=b64,
+    )
+    return ToolResult(
+        passed=True,
+        data={"file_id": rendered.id, "filename": rendered.filename, "checksum": checksum},
+    )
 
 
 @tool(

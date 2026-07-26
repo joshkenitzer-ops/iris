@@ -423,6 +423,16 @@ def stream_turn(
                     "data": result.data,
                 }
                 yield {"type": "tool_result", "tool": display_name, "passed": result.passed}
+                # If the tool produced a downloadable file, emit a
+                # dedicated event so the frontend can render a real
+                # download button immediately — without waiting for
+                # the model's final "done" text or parsing tool results.
+                if result.passed and result.data and result.data.get("file_id"):
+                    yield {
+                        "type": "file_ready",
+                        "file_id": result.data["file_id"],
+                        "filename": result.data.get("filename", "download"),
+                    }
             except Exception:  # noqa: BLE001
                 logger.exception("Tool %s raised during dispatch", block.name)
                 content = {

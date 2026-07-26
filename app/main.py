@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -473,6 +473,29 @@ def deliver(
 # ---------------------------------------------------------------------------
 
 _EXTENSION_TO_FILE_TYPE = {".docx": "docx", ".pdf": "pdf"}
+
+
+@app.get("/sessions/{session_id}/files/{file_id}")
+def download_rendered_file(
+    session_id: str,
+    file_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> Response:
+    """Downloads a file produced by a rendering tool (resume docx,
+    cover letter docx, Iris Profile markdown). The browser receives a
+    real binary response with Content-Disposition: attachment so it
+    saves the file under the correct filename automatically — no
+    PowerShell, no copy-paste, no manual move required."""
+    session = _get_session(user_id, session_id)
+    rendered = session.get_rendered_file(file_id)
+    if rendered is None:
+        raise HTTPException(status_code=404, detail=f"No file with id '{file_id}' on this session.")
+    file_bytes = base64.b64decode(rendered.data_base64)
+    return Response(
+        content=file_bytes,
+        media_type=rendered.content_type,
+        headers={"Content-Disposition": f'attachment; filename="{rendered.filename}"'},
+    )
 
 
 @app.post("/sessions/{session_id}/attachments")

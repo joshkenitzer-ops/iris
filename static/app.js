@@ -365,6 +365,8 @@ async function consumeChatStream(response) {
         showStatus(event.message);
       } else if (event.type === "tool_call") {
         showStatus("Running: " + event.tool);
+      } else if (event.type === "file_ready") {
+        appendDownloadButton(event.file_id, event.filename);
       } else if (event.type === "done") {
         sawTerminalEvent = true;
         hideStatus();
@@ -454,7 +456,130 @@ function appendMessage(role, text) {
   const list = document.getElementById("message-list");
   const el = document.createElement("div");
   el.className = "message message-" + role;
-  el.textContent = text;
+  if (role === "assistant") {
+    el.innerHTML = renderMarkdown(text);
+  } else {
+    el.textContent = text;
+  }
   list.appendChild(el);
   el.scrollIntoView({ behavior: "smooth", block: "end" });
+}
+
+function appendDownloadButton(fileId, filename) {
+  // Rendered as a visually distinct card, not a chat bubble, so it
+  // reads as "something you act on" rather than a message.
+  const list = document.getElementById("message-list");
+  const card = document.createElement("div");
+  card.className = "download-card";
+
+  const icon = document.createElement("span");
+  icon.className = "download-icon";
+  icon.textContent = "\u2193";
+
+  const label = document.createElement("span");
+  label.className = "download-filename";
+  label.textContent = filename;
+
+  const btn = document.createElement("a");
+  btn.className = "lore-btn-primary download-btn";
+  btn.textContent = "Download";
+  btn.href = "/sessions/" + currentSessionId + "/files/" + fileId;
+  btn.download = filename;
+
+  card.appendChild(icon);
+  card.appendChild(label);
+  card.appendChild(btn);
+  list.appendChild(card);
+  card.scrollIntoView({ behavior: "smooth", block: "end" });
+}
+
+function renderMarkdown(text) {
+  // Minimal safe markdown rendering: bold, inline code, and bullet
+  // lists only. Does NOT use innerHTML on raw text: each segment is
+  // built as a DOM node (never innerHTML on user/model-supplied
+  // content) — specifically to handle resume text and document
+  // excerpts that may contain < > & characters or look like HTML.
+  // The approach: split on the patterns we handle, process segment
+  // by segment, assemble into a DocumentFragment, then return the
+  // outer HTML of a wrapper div.
+  const wrapper = document.createElement("div");
+  const lines = text.split("\n");
+  let inBulletList = false;
+  let ul = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      if (inBulletList) { wrapper.appendChild(ul); ul = null; inBulletList = false; }
+      wrapper.appendChild(document.createElement("hr"));
+      continue;
+    }
+
+    // Bullet list item
+    if (/^[-*] /.test(line)) {
+      if (!inBulletList) { ul = document.createElement("ul"); inBulletList = true; }
+      const li = document.createElement("li");
+      appendInlineMarkdown(li, line.replace(/^[-*] /, ""));
+      ul.appendChild(li);
+      continue;
+    }
+
+    if (inBulletList) { wrapper.appendChild(ul); ul = null; inBulletList = false; }
+
+    // Empty line -> paragraph break (skip consecutive empties)
+    if (line.trim() === "") {
+      if (wrapper.lastChild && wrapper.lastChild.tagName !== "BR") {
+        wrapper.appendChild(document.createElement("br"));
+      }
+      continue;
+    }
+
+    // Heading
+    if (/^#{1,3} /.test(line)) {
+      const level = (line.match(/^(#{1,3}) /) || [])[1].length;
+      const h = document.createElement("h" + Math.min(level + 2, 6));
+      appendInlineMarkdown(h, line.replace(/^#{1,3} /, ""));
+      wrapper.appendChild(h);
+      continue;
+    }
+
+    // Plain paragraph line
+    const p = document.createElement("p");
+    appendInlineMarkdown(p, line);
+    wrapper.appendChild(p);
+  }
+
+  if (inBulletList && ul) wrapper.appendChild(ul);
+  return wrapper.innerHTML;
+}
+
+function appendInlineMarkdown(parent, text) {
+  // Handles **bold**, *italic*, `code`, and plain text, in sequence.
+  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parent.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+    if (match[2] !== undefined) {
+      const b = document.createElement("strong");
+      b.textContent = match[2];
+      parent.appendChild(b);
+    } else if (match[3] !== undefined) {
+      const em = document.createElement("em");
+      em.textContent = match[3];
+      parent.appendChild(em);
+    } else if (match[4] !== undefined) {
+      const code = document.createElement("code");
+      code.textContent = match[4];
+      parent.appendChild(code);
+    }
+    lastIndex = re.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parent.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
 }

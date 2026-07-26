@@ -150,6 +150,23 @@ class Attachment:
 
 
 @dataclass
+class RenderedFile:
+    """A file produced by a rendering tool (resume docx, cover letter
+    docx, Iris Profile markdown), stored server-side so the browser
+    can download it via GET /sessions/{id}/files/{file_id}.
+
+    The model never sends the raw bytes to the user — it stores them
+    here and the SSE stream carries a 'file_ready' event with the
+    file_id, which the frontend turns into a real download button."""
+
+    id: str
+    filename: str
+    content_type: str  # "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or "text/markdown"
+    data_base64: str   # base64-encoded file bytes
+    created_at: float = field(default_factory=time.monotonic)
+
+
+@dataclass
 class Session:
     session_id: str
     user_id: str
@@ -171,6 +188,20 @@ class Session:
     created_at: float = field(default_factory=time.monotonic)
     last_accessed: float = field(default_factory=time.monotonic)  # B5: drives idle eviction
     attachments: Dict[str, Attachment] = field(default_factory=dict)  # T-0.1: uploaded files, keyed by attachment id
+    rendered_files: Dict[str, RenderedFile] = field(default_factory=dict)  # output files ready for browser download
+
+    def add_rendered_file(self, filename: str, content_type: str, data_base64: str) -> RenderedFile:
+        rendered = RenderedFile(
+            id=str(uuid.uuid4()),
+            filename=filename,
+            content_type=content_type,
+            data_base64=data_base64,
+        )
+        self.rendered_files[rendered.id] = rendered
+        return rendered
+
+    def get_rendered_file(self, file_id: str) -> Optional[RenderedFile]:
+        return self.rendered_files.get(file_id)
 
     def add_attachment(self, filename: str, file_type: str, file_base64: str) -> Attachment:
         """Stores an uploaded file and returns a reference the model
