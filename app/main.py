@@ -36,7 +36,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -106,6 +106,51 @@ def _clerk_frontend_host() -> str:
     return issuer.rstrip("/")
 
 
+_CLERK_HOST_TOKEN = "__CLERK_FRONTEND_HOST__"
+_CLERK_KEY_TOKEN = "__CLERK_PUBLISHABLE_KEY__"
+
+# The fully rendered index.html, built once at startup. Its inputs
+# (env vars, a file on disk) cannot change while the process runs, so
+# there is nothing to gain from re-rendering per request.
+_index_cache: Dict[str, str] = {}
+
+
+def _render_index() -> str:
+    """Substitutes the Clerk template tokens in static/index.html with
+    values from the environment.
+
+    Templating rather than committing the values keeps
+    environment-specific config in the environment, which is the whole
+    point of the 2026-07-26 change: the values previously lived in the
+    committed HTML, so shipping that file overwrote a live
+    deployment's config and broke sign-in.
+
+    Templating rather than injecting the scripts from JavaScript at
+    runtime is the second half of that lesson. Runtime injection was
+    tried first and failed: Clerk's bundle discovers its publishable
+    key from its own script tag, and that discovery does not work
+    reliably for dynamically-inserted scripts, leaving `Clerk`
+    undefined. This keeps Clerk's documented static tags exactly as
+    they ship them."""
+    template = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+    # A future edit that drops the tokens would otherwise silently
+    # serve a page pointing at a literal "__CLERK_FRONTEND_HOST__"
+    # hostname, which is precisely the failure this change exists to
+    # prevent. Fail at boot instead.
+    for token in (_CLERK_HOST_TOKEN, _CLERK_KEY_TOKEN):
+        if token not in template:
+            raise RuntimeError(
+                f"static/index.html is missing the {token} template token. "
+                "The Clerk script tags must keep their template tokens; set "
+                "real values via environment variables, never in the file."
+            )
+
+    return template.replace(_CLERK_HOST_TOKEN, _clerk_frontend_host()).replace(
+        _CLERK_KEY_TOKEN, os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip()
+    )
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     """N4: /chat reads the spec from disk, and / serves the frontend
@@ -138,6 +183,7 @@ async def _lifespan(_app: FastAPI):
             "derived. Set it to your Clerk Frontend API URL."
         )
     _get_spec_text()
+    _index_cache["html"] = _render_index()
     yield
 
 
@@ -223,12 +269,21 @@ def health() -> Dict[str, str]:
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-@app.get("/")
-def index() -> FileResponse:
-    """Serves the frontend shell. Deliberately unauthenticated: this is
-    exactly what has to render the Clerk sign-in widget for a visitor
-    who isn't signed in yet."""
-    return FileResponse(STATIC_DIR / "index.html")
+@app.get("/", response_class=HTMLResponse)
+def index() -> HTMLResponse:
+    """Serves the frontend shell with the Clerk template tokens
+    substituted from the environment (see _render_index).
+
+    Deliberately unauthenticated: this is exactly what has to render
+    the Clerk sign-in widget for a visitor who isn't signed in yet.
+
+    Note this serves the RENDERED page, never the raw file. The raw
+    file is also reachable under /static, but nothing links to it and
+    it would be non-functional (unsubstituted tokens) if fetched
+    directly."""
+    if "html" not in _index_cache:
+        _index_cache["html"] = _render_index()
+    return HTMLResponse(_index_cache["html"])
 
 
 @app.get("/config")

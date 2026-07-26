@@ -128,16 +128,52 @@ class TestFrontendConfig(_ClientTestCase):
         body = self.client.get("/config").json()
         self.assertFalse(body["clerk_frontend_host"].startswith("http"))
 
-    def test_no_clerk_values_are_hardcoded_in_the_served_html(self) -> None:
-        """The actual regression guard. If Clerk values ever migrate
-        back into index.html, shipping that file can silently clobber
-        a live deployment's config again."""
+    def test_no_clerk_values_are_hardcoded_in_the_file_on_disk(self) -> None:
+        """The actual regression guard for the 2026-07-25 outage. The
+        committed file must hold template tokens, never real values,
+        so shipping it can never clobber a live deployment's config."""
+        raw = (self.module.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertIn("__CLERK_FRONTEND_HOST__", raw)
+        self.assertIn("__CLERK_PUBLISHABLE_KEY__", raw)
+        self.assertNotIn("clerk.accounts.dev/npm", raw)
+        self.assertNotIn("pk_test", raw)
+        self.assertNotIn("pk_live", raw)
+
+    def test_served_page_has_the_tokens_substituted(self) -> None:
+        """The other half: what actually reaches the browser must have
+        real values, or the Clerk bundles resolve to a literal
+        '__CLERK_FRONTEND_HOST__' hostname."""
         html = self.client.get("/").text
-        self.assertNotIn("clerk.accounts.dev", html)
-        self.assertNotIn("pk_test", html)
-        self.assertNotIn("pk_live", html)
-        self.assertNotIn("YOUR_FRONTEND_API_URL", html)
-        self.assertNotIn("YOUR_PUBLISHABLE_KEY", html)
+        self.assertNotIn("__CLERK_FRONTEND_HOST__", html)
+        self.assertNotIn("__CLERK_PUBLISHABLE_KEY__", html)
+        self.assertIn("test-app.clerk.accounts.dev/npm", html)
+        self.assertIn(os.environ["CLERK_PUBLISHABLE_KEY"], html)
+
+    def test_served_page_never_builds_a_doubled_scheme(self) -> None:
+        """The 2026-07-25 'https://https//...' failure, pinned."""
+        html = self.client.get("/").text
+        self.assertNotIn("https://https", html)
+        self.assertNotIn("http://http", html)
+
+    def test_missing_template_token_refuses_to_boot(self) -> None:
+        """If a future edit strips the tokens, the page would silently
+        point at a literal placeholder hostname. Fail at boot."""
+        import tempfile
+        from pathlib import Path
+
+        module = _reload_main()
+        original = module.STATIC_DIR
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "index.html").write_text("<html>no tokens here</html>", encoding="utf-8")
+            module.STATIC_DIR = tmp_path
+            try:
+                with self.assertRaises(RuntimeError):
+                    with TestClient(module.app):
+                        pass
+            finally:
+                module.STATIC_DIR = original
+        _reload_main()
 
 
 class TestClerkHostNormalization(unittest.TestCase):

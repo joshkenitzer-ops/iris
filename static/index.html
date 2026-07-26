@@ -10,20 +10,38 @@
 <link rel="stylesheet" href="/static/iris-app.css">
 
 <!--
-  There are deliberately NO Clerk script tags or Clerk values in this
-  file. app.js fetches /config at boot and injects the Clerk bundles
-  with the correct URLs at runtime.
+  Clerk's officially documented script-tag setup
+  (clerk.com/docs/js-frontend), left exactly as they specify.
 
-  This is not incidental. These values used to be hardcoded here, and
+  __CLERK_FRONTEND_HOST__ and __CLERK_PUBLISHABLE_KEY__ are
+  substituted by the server when it serves this page: see the `/`
+  route in app/main.py. They are PERMANENT template tokens, not
+  config waiting to be filled in. Do not replace them with real
+  values; set CLERK_ISSUER and CLERK_PUBLISHABLE_KEY in the server's
+  environment instead.
+
+  Why it works this way: these values used to be hardcoded here, and
   on 2026-07-25 shipping an unrelated change to this file overwrote a
-  live deployment's real values with placeholders and took sign-in
-  down completely. Anything that differs between environments belongs
-  in the server's environment, not in a file that gets replaced
-  wholesale. See the /config endpoint in app/main.py.
-
-  To configure: set CLERK_PUBLISHABLE_KEY and CLERK_ISSUER as
-  environment variables on the server. Nothing to edit here.
+  live deployment's real values and took sign-in down. Templating
+  keeps environment-specific values in the environment (where
+  ANTHROPIC_API_KEY and the rest already live) while preserving
+  Clerk's known-good static script tags, rather than injecting the
+  bundles at runtime, which the Clerk loader does not reliably
+  support.
 -->
+<script
+  defer
+  crossorigin="anonymous"
+  src="https://__CLERK_FRONTEND_HOST__/npm/@clerk/ui@1/dist/ui.browser.js"
+  type="text/javascript"
+></script>
+<script
+  defer
+  crossorigin="anonymous"
+  data-clerk-publishable-key="__CLERK_PUBLISHABLE_KEY__"
+  src="https://__CLERK_FRONTEND_HOST__/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
+  type="text/javascript"
+></script>
 </head>
 <body>
 

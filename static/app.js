@@ -28,8 +28,19 @@ let currentAttachment = null; // { attachment_id, filename } | null
 
 window.addEventListener("load", async function () {
   try {
-    const config = await fetchConfig();
-    await loadClerkBundles(config);
+    // The Clerk bundles are loaded by deferred <script> tags in
+    // index.html, with values the server substituted in. By the time
+    // the window load event fires, they have executed and defined the
+    // Clerk global. Runtime injection from here was tried and
+    // reverted: Clerk's loader discovers its publishable key from its
+    // own script tag and does not do so reliably for dynamically
+    // inserted scripts, which left Clerk undefined.
+    if (typeof Clerk === "undefined") {
+      throw new Error(
+        "The Clerk library did not load. Check the browser console for a " +
+          "blocked or failed request to the Clerk CDN."
+      );
+    }
     await Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
   } catch (err) {
     showBootError(err);
@@ -41,54 +52,11 @@ window.addEventListener("load", async function () {
   handleAuthStateChange({ user: Clerk.user });
 });
 
-async function fetchConfig() {
-  const response = await fetch("/config");
-  if (!response.ok) {
-    throw new Error("Server returned " + response.status + " for /config.");
-  }
-  const config = await response.json();
-  if (!config.clerk_publishable_key) {
-    throw new Error("Server has no CLERK_PUBLISHABLE_KEY set.");
-  }
-  if (!config.clerk_frontend_host) {
-    throw new Error("Server has no CLERK_ISSUER set.");
-  }
-  return config;
-}
-
-function injectScript(src, attributes) {
-  return new Promise(function (resolve, reject) {
-    const script = document.createElement("script");
-    script.src = src;
-    script.crossOrigin = "anonymous";
-    Object.keys(attributes || {}).forEach(function (name) {
-      script.setAttribute(name, attributes[name]);
-    });
-    script.onload = resolve;
-    script.onerror = function () {
-      reject(new Error("Could not load " + src));
-    };
-    document.head.appendChild(script);
-  });
-}
-
-async function loadClerkBundles(config) {
-  // Order matters: the UI bundle has to be present before clerk-js
-  // initializes, which is why these are awaited in sequence rather
-  // than in parallel.
-  const base = "https://" + config.clerk_frontend_host;
-  await injectScript(base + "/npm/@clerk/ui@1/dist/ui.browser.js");
-  await injectScript(base + "/npm/@clerk/clerk-js@6/dist/clerk.browser.js", {
-    "data-clerk-publishable-key": config.clerk_publishable_key,
-  });
-}
-
 function showBootError(err) {
   // Deliberately shows the real reason rather than one generic
   // string. Everything reachable here is a client-side configuration
-  // problem (a missing env var, an unreachable CDN host), never
-  // server internals, and the previous single opaque message made a
-  // simple misconfiguration genuinely hard to diagnose.
+  // problem, never server internals, and a single opaque message made
+  // an earlier misconfiguration genuinely hard to diagnose.
   const boot = document.getElementById("boot-loading");
   boot.innerHTML = "";
   const heading = document.createElement("div");
