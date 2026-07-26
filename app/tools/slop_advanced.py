@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import re
 import statistics
-from typing import List
+from typing import List, Optional
 
 from app.enforcement import EnforcementKind, ToolResult, tool
+from app.session import Session
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -443,16 +444,60 @@ def nominate_tense_inconsistency_candidates(text: str, is_current_role: bool) ->
         "opener is a structural AI tell even when each sentence is otherwise "
         "clean. The nominator flags the run and hands it to judgment to "
         "confirm whether the repetition is intentional emphasis or "
-        "structural laziness."
+        "structural laziness. "
+        "IMPORTANT: for the originally uploaded document, pass attachment_id "
+        "(from an earlier ingest_document call) instead of text — the "
+        "harness resolves the cached extracted text server-side, so the "
+        "model never has to paste tens of thousands of characters back into "
+        "this call just to scan them. Pass text directly only for content "
+        "that isn't an uploaded attachment, e.g. a drafted section."
     ),
     kind=EnforcementKind.HYBRID,
     input_schema={
         "type": "object",
-        "properties": {"text": {"type": "string"}},
-        "required": ["text"],
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "Text to scan. Omit this and pass attachment_id instead when scanning an uploaded document.",
+            },
+            "attachment_id": {
+                "type": "string",
+                "description": (
+                    "Attachment id from an earlier ingest_document call. The harness "
+                    "resolves it to that attachment's cached extracted text server-side."
+                ),
+            },
+        },
     },
+    needs_session=True,
 )
-def nominate_repeated_opener_candidates(text: str) -> ToolResult:
+def nominate_repeated_opener_candidates(
+    text: Optional[str] = None,
+    attachment_id: Optional[str] = None,
+    session: Optional[Session] = None,
+) -> ToolResult:
+    if text is None:
+        if not attachment_id:
+            return ToolResult(
+                passed=False,
+                findings=[{
+                    "severity": "Critical",
+                    "issue": "nominate_repeated_opener_candidates requires either 'text' or 'attachment_id'.",
+                    "fix": "Pass attachment_id from ingest_document, or pass text directly.",
+                }],
+            )
+        attachment = session.get_attachment(attachment_id) if session else None
+        if attachment is None or attachment.extracted_text is None:
+            return ToolResult(
+                passed=False,
+                findings=[{
+                    "severity": "Critical",
+                    "issue": f"No cached extracted text for attachment '{attachment_id}'.",
+                    "fix": "Call ingest_document with this attachment_id before scanning it.",
+                }],
+            )
+        text = attachment.extracted_text
+
     import re
 
     # Split on sentence-ending punctuation OR bullet newlines.
