@@ -81,6 +81,43 @@ def _blocks_to_plain(blocks) -> List[Dict[str, Any]]:
     return plain
 
 
+def _with_cache_breakpoint(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Returns `messages` with an ephemeral cache_control marker on the
+    last content block of the last message, for this API call only.
+
+    Without this, only the system block (spec_text) carries
+    cache_control, so every iteration of the tool loop below resends
+    the entire accumulated transcript as fresh, uncached input tokens
+    - and a turn can run up to max_tool_iterations of these, each
+    paying full price for everything already sent in prior iterations
+    of the *same* turn. A document-sized tool result (ingest_document's
+    extracted_text) sitting in that transcript turns "a few uncached
+    tokens per round trip" into "the whole document, reprocessed cold,
+    every round trip."
+
+    Returns a new list; never mutates `messages` in place. The caller
+    (stream_turn) keeps threading the original, marker-free list through
+    the loop and into session storage - if the marker were left on the
+    stored transcript, it would sit in a stale position on every future
+    turn and eventually exceed the API's 4-breakpoint-per-request cap,
+    instead of the intended one fresh breakpoint per call."""
+    if not messages:
+        return messages
+    last = dict(messages[-1])
+    content = last.get("content")
+    if isinstance(content, str):
+        last["content"] = [
+            {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+        ]
+    elif isinstance(content, list) and content:
+        content = list(content)
+        content[-1] = {**content[-1], "cache_control": {"type": "ephemeral"}}
+        last["content"] = content
+    else:
+        return messages
+    return messages[:-1] + [last]
+
+
 class ToolLoopExhausted(RuntimeError):
     """Raised when a turn hits max_tool_iterations. A distinct type so
     the route can answer 409 with something actionable rather than
@@ -408,7 +445,7 @@ def stream_turn(
                     }
                 ],
                 tools=tools,
-                messages=working_messages,
+                messages=_with_cache_breakpoint(working_messages),
                 output_config={"effort": EFFORT},
             ) as message_stream:
                 response = message_stream.get_final_message()
