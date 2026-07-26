@@ -97,14 +97,27 @@ MAX_SESSIONS_PER_USER = 20
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_ATTACHMENTS_PER_SESSION = 10  # oldest evicted first past this
 
-# Maximum tokens in a single model response. Raised from 4096 on
-# 2026-07-26 to 8192, then to 16000 after Josh confirmed from the
-# earlier Hermes build that a full master resume needs roughly that.
-# An audit that enumerates findings across five dimensions
-# routinely runs past 4096, and hitting the cap produced a truncated
-# (sometimes entirely empty) reply. Env-overridable so this can be
-# tuned without a code change.
-MAX_RESPONSE_TOKENS = int(os.environ.get("IRIS_MAX_RESPONSE_TOKENS", "16000"))
+# Maximum tokens in a single model response. History: 4096 -> 8192 ->
+# 16000 on 2026-07-26, each bump chasing truncation on real audits.
+# Truncation recurred at 16000 the next morning, which pointed at the
+# actual mechanism rather than "audits are long": Claude Sonnet 5 runs
+# with adaptive thinking on by default, and max_tokens is a hard cap
+# on thinking PLUS visible response text combined, not just the text.
+# Nothing in claude_client.py sets an effort or thinking parameter, so
+# every call runs at Sonnet 5's default (high effort, adaptive
+# thinking on) with zero budget set aside for it. Sonnet 5's tokenizer
+# also produces roughly 30% more tokens than Sonnet 4.6 for the same
+# text, so the "16000" figure (extrapolated from an old Hermes-era
+# Sonnet 4.6 number) undershot from two directions at once. Raised
+# here to 32000, still a small fraction of Sonnet 5's real 128k output
+# ceiling, to give thinking and tool calls real headroom rather than
+# guessing again at the next-smallest number. If cost or latency ever
+# matters more than headroom, the other lever documented by Anthropic
+# for this exact symptom is dropping effort from its "high" default to
+# "medium" in the messages.create() call - not done here, since that
+# trades audit thoroughness for tokens and is a product call, not a
+# bug fix. Env-overridable so this can be tuned without a code change.
+MAX_RESPONSE_TOKENS = int(os.environ.get("IRIS_MAX_RESPONSE_TOKENS", "32000"))
 
 # Per-user /chat rate limit: max calls within the rolling window.
 CHAT_RATE_LIMIT_CALLS = 30
