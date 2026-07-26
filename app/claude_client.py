@@ -470,28 +470,62 @@ def stream_turn(
             return
 
         tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
+
+        # Split tool blocks: TOOL/GATE are deterministic and run in-process
+        # without extra API round trips. HYBRID/JUDGMENT need model reasoning.
+        # This collapses N sequential TOOL calls into one pass regardless of
+        # what the model requested — spec-instruction batching wasn't working,
+        # so harness-level enforcement makes sequential calling impossible.
+        from app.enforcement import EnforcementKind as EK
+
+        tool_blocks = [b for b in response.content if b.type == "tool_use"]
+        deterministic_blocks, judgment_blocks = [], []
+        for block in tool_blocks:
+            try:
+                spec = registry.get_by_name(block.name)
+                (deterministic_blocks if spec.kind in (EK.TOOL, EK.GATE) else judgment_blocks).append(block)
+            except Exception:
+                judgment_blocks.append(block)
+
+        # Batch dispatch: all TOOL/GATE in one pass, one status update
+        if deterministic_blocks:
+            n = len(deterministic_blocks)
+            yield {"type": "tool_call", "tool": f"Running {n} check{'s' if n > 1 else ''}"}
+            logger.info("Batch-dispatching %d deterministic tool(s): %s", n,
+                        [b.name for b in deterministic_blocks])
+            for block in deterministic_blocks:
+                try:
+                    result = registry.dispatch(block.name, block.input, session=session)
+                    content = {"passed": result.passed, "findings": result.findings, "data": {}}
+                    if result.passed and result.data and result.data.get("file_id"):
+                        file_id = result.data["file_id"]
+                        filename = result.data.get("filename", "download")
+                        rendered = session.get_rendered_file(file_id) if session else None
+                        yield {
+                            "type": "file_ready",
+                            "file_id": file_id,
+                            "filename": filename,
+                            "content_type": rendered.content_type if rendered else "application/octet-stream",
+                            "data_base64": rendered.data_base64 if rendered else "",
+                        }
+                except Exception:  # noqa: BLE001
+                    logger.exception("Tool %s raised during batch dispatch", block.name)
+                    content = {"error": f"Tool {block.name} failed. Logged server-side."}
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": json.dumps(content, default=str),
+                })
+            yield {"type": "tool_result", "tool": f"Running {n} check{'s' if n > 1 else ''}", "passed": True}
+
+        # Individual dispatch for HYBRID/JUDGMENT — need model adjudication
+        for block in judgment_blocks:
             display_name = _humanize_tool_name(block.name)
             yield {"type": "tool_call", "tool": display_name}
             try:
                 result = registry.dispatch(block.name, block.input, session=session)
-                content = {
-                    "passed": result.passed,
-                    "findings": result.findings,
-                    "data": result.data,
-                }
+                content = {"passed": result.passed, "findings": result.findings, "data": result.data}
                 yield {"type": "tool_result", "tool": display_name, "passed": result.passed}
-                # If the tool produced a downloadable file, emit a
-                # dedicated event with the actual file data embedded.
-                # Previously this only carried a file_id and the
-                # browser fetched /sessions/{id}/files/{file_id} on
-                # click — but that endpoint returns 404 once the
-                # in-memory session expires, which can happen between
-                # render and click. Embedding the base64 payload here
-                # lets the frontend build a data: URL that lives in
-                # the DOM and never depends on session state.
                 if result.passed and result.data and result.data.get("file_id"):
                     file_id = result.data["file_id"]
                     filename = result.data.get("filename", "download")
@@ -505,17 +539,13 @@ def stream_turn(
                     }
             except Exception:  # noqa: BLE001
                 logger.exception("Tool %s raised during dispatch", block.name)
-                content = {
-                    "error": f"Tool {block.name} failed to run. The harness logged the detail.",
-                }
+                content = {"error": f"Tool {block.name} failed to run. The harness logged the detail."}
                 yield {"type": "tool_result", "tool": display_name, "passed": False}
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": json.dumps(content, default=str),
-                }
-            )
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": json.dumps(content, default=str),
+            })
 
         working_messages = working_messages + [{"role": "user", "content": tool_results}]
 
