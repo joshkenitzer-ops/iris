@@ -496,15 +496,30 @@ def stream_turn(
             for block in deterministic_blocks:
                 try:
                     result = registry.dispatch(block.name, block.input, session=session)
-                    # Preserve data when it contains file_id — the model needs
-                    # to know a file was rendered. Strip data for pure check
-                    # tools (the ones that return candidate lists, scores, etc.)
-                    # since those payloads bloat the model context unnecessarily.
-                    has_file = result.data and result.data.get("file_id")
+                    # Preserve data when it contains a file_id (model needs to
+                    # know a file was rendered) OR extraction output the model
+                    # needs to proceed on (e.g. ingest_document's extracted_text).
+                    # Strip data only for pure check/score tools whose payloads
+                    # (candidate lists, scores) are disposable context bloat.
+                    # NOTE: previously this only checked for file_id, so
+                    # ingest_document's result (passed=True, but no file_id)
+                    # had its entire data dict replaced with {} — the model
+                    # received "extraction succeeded" with zero actual content,
+                    # and reported the extraction as empty to the user despite
+                    # _ingest_docx having extracted real text. Confirmed via
+                    # server logs: 28,960 chars extracted, model told user
+                    # "no text was pulled from the file."
+                    data = result.data or {}
+                    has_file = data.get("file_id")
+                    has_extraction_content = (
+                        "extracted_text" in data
+                        or "raw_char_count" in data
+                    )
+                    should_preserve = has_file or has_extraction_content
                     content = {
                         "passed": result.passed,
                         "findings": result.findings,
-                        "data": result.data if has_file else {},
+                        "data": data if should_preserve else {},
                     }
                     if has_file:
                         file_id = result.data["file_id"]
