@@ -86,11 +86,36 @@ def _get_spec_text() -> str:
     return _spec_cache["text"]
 
 
+def _clerk_frontend_host() -> str:
+    """The bare hostname Clerk's browser bundles are served from,
+    derived from CLERK_ISSUER rather than configured separately.
+
+    CLERK_ISSUER is kept verbatim for JWT verification (app.clerk_auth
+    compares it against the token's `iss` claim, which includes the
+    scheme, so it must NOT be mutated there). Script URLs need the
+    host without a scheme, since the frontend builds
+    "https://{host}/npm/...". Deriving one from the other means there
+    is only ever one value to configure, and normalizing here makes
+    the duplicated-scheme bug ("https://https//...") structurally
+    impossible no matter how the env var is pasted in."""
+    issuer = os.environ.get("CLERK_ISSUER", "").strip()
+    for scheme in ("https://", "http://"):
+        if issuer.startswith(scheme):
+            issuer = issuer[len(scheme) :]
+            break
+    return issuer.rstrip("/")
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     """N4: /chat reads the spec from disk, and / serves the frontend
     shell from disk. If either is missing from the deployed tree,
-    fail loudly at boot rather than with a 500 on the first request."""
+    fail loudly at boot rather than with a 500 on the first request.
+
+    CLERK_PUBLISHABLE_KEY is checked here for the same reason: without
+    it the frontend cannot render a sign-in form at all, and a browser
+    console error is a far worse way to discover that than a refused
+    boot with a message naming the exact missing variable."""
     if not SPEC_PATH.is_file():
         raise RuntimeError(
             f"Spec file not found at {SPEC_PATH}. docs/iris-spec.md must be "
@@ -100,6 +125,17 @@ async def _lifespan(_app: FastAPI):
         raise RuntimeError(
             f"Frontend not found at {STATIC_DIR / 'index.html'}. The static/ "
             "directory must be committed and present in the deployed tree."
+        )
+    if not os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip():
+        raise RuntimeError(
+            "CLERK_PUBLISHABLE_KEY is not set. The frontend needs it to render "
+            "a sign-in form; without it every visitor gets a blank page. Set it "
+            "from the Clerk dashboard's API Keys page (the value starting 'pk_')."
+        )
+    if not _clerk_frontend_host():
+        raise RuntimeError(
+            "CLERK_ISSUER is not set, so the Clerk frontend host cannot be "
+            "derived. Set it to your Clerk Frontend API URL."
         )
     _get_spec_text()
     yield
@@ -193,6 +229,35 @@ def index() -> FileResponse:
     exactly what has to render the Clerk sign-in widget for a visitor
     who isn't signed in yet."""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/config")
+def frontend_config() -> Dict[str, str]:
+    """Public frontend configuration, read from the server's
+    environment at request time.
+
+    Both values here are designed to be public: the publishable key is
+    meant to ship in client-side code, and the Clerk frontend host is
+    a public CDN hostname. Nothing secret is exposed. What this buys
+    is that neither value lives in a committed file any more.
+
+    That matters for a specific reason, found the hard way on
+    2026-07-25: these were previously hardcoded into
+    static/index.html, so shipping any update to that file silently
+    overwrote a working deployment's real values with placeholders and
+    broke sign-in entirely. Configuration that differs between
+    environments does not belong in a file that gets replaced
+    wholesale. Env vars are already how every other deployment-
+    specific value here works (ANTHROPIC_API_KEY, CLERK_ISSUER,
+    ALLOWED_ORIGINS); this brings the frontend in line with that.
+
+    Deliberately unauthenticated: the sign-in form cannot be rendered
+    until the browser has these, so requiring a session to fetch them
+    would be circular."""
+    return {
+        "clerk_publishable_key": os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip(),
+        "clerk_frontend_host": _clerk_frontend_host(),
+    }
 
 
 # ---------------------------------------------------------------------------

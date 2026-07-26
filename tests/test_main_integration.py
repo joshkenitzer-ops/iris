@@ -57,6 +57,14 @@ from app.enforcement import registry
 from app.session import Finding
 from app.session import store as session_store
 
+# The lifespan startup check now refuses to boot without these, by
+# design: a missing Clerk value used to surface as a broken sign-in
+# form in the browser, which is a much worse way to find out. Set for
+# the whole module so every TestClient here can start. Individual
+# tests that need one absent remove it deliberately and restore it.
+os.environ.setdefault("CLERK_ISSUER", "https://test-app.clerk.accounts.dev")
+os.environ.setdefault("CLERK_PUBLISHABLE_KEY", "pk_test_not_a_real_key")
+
 
 def _reload_main():
     return importlib.reload(main_module)
@@ -93,6 +101,77 @@ class _AuthOverriddenTestCase(_ClientTestCase):
         response = self.client.post("/sessions")
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["session_id"]
+
+
+class TestFrontendConfig(_ClientTestCase):
+    """/config: the fix for the 2026-07-25 outage where Clerk values
+    hardcoded in static/index.html were overwritten with placeholders
+    by shipping an unrelated change to that file."""
+
+    def test_config_is_reachable_without_auth(self) -> None:
+        """Must be: the sign-in form can't render until the browser
+        has these, so requiring a session would be circular."""
+        response = self.client.get("/config")
+        self.assertEqual(response.status_code, 200)
+
+    def test_config_returns_both_values_from_the_environment(self) -> None:
+        response = self.client.get("/config")
+        body = response.json()
+        self.assertEqual(body["clerk_publishable_key"], os.environ["CLERK_PUBLISHABLE_KEY"])
+        self.assertEqual(body["clerk_frontend_host"], "test-app.clerk.accounts.dev")
+
+    def test_frontend_host_has_no_scheme(self) -> None:
+        """The frontend builds "https://" + host. A host that still
+        carried its own scheme produced "https://https//..." and took
+        sign-in down on 2026-07-25; normalizing server-side makes that
+        impossible regardless of how the env var is pasted in."""
+        body = self.client.get("/config").json()
+        self.assertFalse(body["clerk_frontend_host"].startswith("http"))
+
+    def test_no_clerk_values_are_hardcoded_in_the_served_html(self) -> None:
+        """The actual regression guard. If Clerk values ever migrate
+        back into index.html, shipping that file can silently clobber
+        a live deployment's config again."""
+        html = self.client.get("/").text
+        self.assertNotIn("clerk.accounts.dev", html)
+        self.assertNotIn("pk_test", html)
+        self.assertNotIn("pk_live", html)
+        self.assertNotIn("YOUR_FRONTEND_API_URL", html)
+        self.assertNotIn("YOUR_PUBLISHABLE_KEY", html)
+
+
+class TestClerkHostNormalization(unittest.TestCase):
+    """_clerk_frontend_host must produce a bare host from anything a
+    person might reasonably paste into CLERK_ISSUER."""
+
+    def setUp(self) -> None:
+        self.module = _reload_main()
+        self._original = os.environ.get("CLERK_ISSUER")
+
+    def tearDown(self) -> None:
+        if self._original is not None:
+            os.environ["CLERK_ISSUER"] = self._original
+        _reload_main()
+
+    def test_strips_https_scheme(self) -> None:
+        os.environ["CLERK_ISSUER"] = "https://stable-robin-5.clerk.accounts.dev"
+        self.assertEqual(self.module._clerk_frontend_host(), "stable-robin-5.clerk.accounts.dev")
+
+    def test_strips_http_scheme(self) -> None:
+        os.environ["CLERK_ISSUER"] = "http://stable-robin-5.clerk.accounts.dev"
+        self.assertEqual(self.module._clerk_frontend_host(), "stable-robin-5.clerk.accounts.dev")
+
+    def test_accepts_a_bare_host_unchanged(self) -> None:
+        os.environ["CLERK_ISSUER"] = "stable-robin-5.clerk.accounts.dev"
+        self.assertEqual(self.module._clerk_frontend_host(), "stable-robin-5.clerk.accounts.dev")
+
+    def test_strips_trailing_slash(self) -> None:
+        os.environ["CLERK_ISSUER"] = "https://stable-robin-5.clerk.accounts.dev/"
+        self.assertEqual(self.module._clerk_frontend_host(), "stable-robin-5.clerk.accounts.dev")
+
+    def test_tolerates_surrounding_whitespace(self) -> None:
+        os.environ["CLERK_ISSUER"] = "  https://stable-robin-5.clerk.accounts.dev  "
+        self.assertEqual(self.module._clerk_frontend_host(), "stable-robin-5.clerk.accounts.dev")
 
 
 class TestHealth(_ClientTestCase):
@@ -148,18 +227,27 @@ class TestAuthWiring(_ClientTestCase):
         response = self.client.post("/sessions", headers={"Authorization": "Bearer not-a-real-jwt"})
         self.assertEqual(response.status_code, 401)
 
-    def test_missing_clerk_issuer_is_500_not_a_silent_pass(self) -> None:
+    def test_missing_clerk_issuer_refuses_to_boot(self) -> None:
+        """Behavior deliberately changed 2026-07-26: a missing
+        CLERK_ISSUER used to surface as a 500 on the first
+        authenticated request. It now refuses to boot at all, so the
+        misconfiguration is caught at deploy time rather than by the
+        first user to hit the site. get_current_user_id still has its
+        own 500 path as defense in depth (covered by
+        tests/test_clerk_auth.py's fail-closed test); this asserts the
+        earlier, louder failure."""
         original = os.environ.pop("CLERK_ISSUER", None)
+        reset_verifier_for_testing()
         try:
-            reset_verifier_for_testing()
-            self.module = _reload_main()
-            with TestClient(self.module.app) as client:
-                response = client.post("/sessions", headers={"Authorization": "Bearer anything"})
-            self.assertEqual(response.status_code, 500)
+            module = _reload_main()
+            with self.assertRaises(RuntimeError):
+                with TestClient(module.app):
+                    pass
         finally:
             if original is not None:
                 os.environ["CLERK_ISSUER"] = original
             reset_verifier_for_testing()
+            _reload_main()
 
 
 class TestLifespanStartupCheck(unittest.TestCase):
@@ -176,6 +264,22 @@ class TestLifespanStartupCheck(unittest.TestCase):
                     pass
         finally:
             module.SPEC_PATH = original_path
+            _reload_main()
+
+    def test_missing_clerk_publishable_key_refuses_to_boot(self) -> None:
+        """Without it the frontend renders no sign-in form at all. A
+        refused boot naming the variable beats a blank page and a
+        browser console error, which is how the 2026-07-25 outage
+        actually presented."""
+        original = os.environ.pop("CLERK_PUBLISHABLE_KEY", None)
+        try:
+            module = _reload_main()
+            with self.assertRaises(RuntimeError):
+                with TestClient(module.app):
+                    pass
+        finally:
+            if original is not None:
+                os.environ["CLERK_PUBLISHABLE_KEY"] = original
             _reload_main()
 
     def test_missing_frontend_index_raises_on_startup(self) -> None:

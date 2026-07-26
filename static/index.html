@@ -10,33 +10,20 @@
 <link rel="stylesheet" href="/static/iris-app.css">
 
 <!--
-  Clerk vanilla JS SDK, script-tag embed. This is Clerk's own
-  officially documented no-bundler path (clerk.com/docs/js-frontend),
-  chosen deliberately over their React SDK: this app has no build
-  step at all, and a React-via-CDN-import-map setup would be one more
-  moving part with no framework anywhere else to justify it.
+  There are deliberately NO Clerk script tags or Clerk values in this
+  file. app.js fetches /config at boot and injects the Clerk bundles
+  with the correct URLs at runtime.
 
-  REPLACE both placeholders below with your real values from the
-  Clerk dashboard's API Keys page before this will work:
-    - YOUR_FRONTEND_API_URL is the same value as CLERK_ISSUER on the
-      backend (see app/clerk_auth.py's docstring).
-    - YOUR_PUBLISHABLE_KEY is safe to embed in client-side code like
-      this; it is not a secret, unlike CLERK_ISSUER's paired secret
-      key, which never belongs in anything the browser can see.
+  This is not incidental. These values used to be hardcoded here, and
+  on 2026-07-25 shipping an unrelated change to this file overwrote a
+  live deployment's real values with placeholders and took sign-in
+  down completely. Anything that differs between environments belongs
+  in the server's environment, not in a file that gets replaced
+  wholesale. See the /config endpoint in app/main.py.
+
+  To configure: set CLERK_PUBLISHABLE_KEY and CLERK_ISSUER as
+  environment variables on the server. Nothing to edit here.
 -->
-<script
-  defer
-  crossorigin="anonymous"
-  src="https://YOUR_FRONTEND_API_URL/npm/@clerk/ui@1/dist/ui.browser.js"
-  type="text/javascript"
-></script>
-<script
-  defer
-  crossorigin="anonymous"
-  data-clerk-publishable-key="YOUR_PUBLISHABLE_KEY"
-  src="https://YOUR_FRONTEND_API_URL/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
-  type="text/javascript"
-></script>
 </head>
 <body>
 

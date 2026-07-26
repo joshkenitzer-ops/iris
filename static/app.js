@@ -28,10 +28,11 @@ let currentAttachment = null; // { attachment_id, filename } | null
 
 window.addEventListener("load", async function () {
   try {
+    const config = await fetchConfig();
+    await loadClerkBundles(config);
     await Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
   } catch (err) {
-    document.getElementById("boot-loading").textContent =
-      "Could not load sign-in. Refresh the page to try again.";
+    showBootError(err);
     return;
   }
 
@@ -39,6 +40,66 @@ window.addEventListener("load", async function () {
   Clerk.addListener(handleAuthStateChange);
   handleAuthStateChange({ user: Clerk.user });
 });
+
+async function fetchConfig() {
+  const response = await fetch("/config");
+  if (!response.ok) {
+    throw new Error("Server returned " + response.status + " for /config.");
+  }
+  const config = await response.json();
+  if (!config.clerk_publishable_key) {
+    throw new Error("Server has no CLERK_PUBLISHABLE_KEY set.");
+  }
+  if (!config.clerk_frontend_host) {
+    throw new Error("Server has no CLERK_ISSUER set.");
+  }
+  return config;
+}
+
+function injectScript(src, attributes) {
+  return new Promise(function (resolve, reject) {
+    const script = document.createElement("script");
+    script.src = src;
+    script.crossOrigin = "anonymous";
+    Object.keys(attributes || {}).forEach(function (name) {
+      script.setAttribute(name, attributes[name]);
+    });
+    script.onload = resolve;
+    script.onerror = function () {
+      reject(new Error("Could not load " + src));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+async function loadClerkBundles(config) {
+  // Order matters: the UI bundle has to be present before clerk-js
+  // initializes, which is why these are awaited in sequence rather
+  // than in parallel.
+  const base = "https://" + config.clerk_frontend_host;
+  await injectScript(base + "/npm/@clerk/ui@1/dist/ui.browser.js");
+  await injectScript(base + "/npm/@clerk/clerk-js@6/dist/clerk.browser.js", {
+    "data-clerk-publishable-key": config.clerk_publishable_key,
+  });
+}
+
+function showBootError(err) {
+  // Deliberately shows the real reason rather than one generic
+  // string. Everything reachable here is a client-side configuration
+  // problem (a missing env var, an unreachable CDN host), never
+  // server internals, and the previous single opaque message made a
+  // simple misconfiguration genuinely hard to diagnose.
+  const boot = document.getElementById("boot-loading");
+  boot.innerHTML = "";
+  const heading = document.createElement("div");
+  heading.className = "boot-error-heading";
+  heading.textContent = "Iris could not start.";
+  const detail = document.createElement("div");
+  detail.className = "boot-error-detail";
+  detail.textContent = (err && err.message) || String(err);
+  boot.appendChild(heading);
+  boot.appendChild(detail);
+}
 
 let appInitialized = false;
 

@@ -40,6 +40,11 @@ services:
         sync: false
       - key: CLERK_ISSUER
         sync: false
+      # Public by design (it ships to the browser), but kept here
+      # rather than in static/index.html so that shipping a frontend
+      # change can never overwrite a live deployment's real value.
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
       - key: CLERK_AUTHORIZED_PARTIES
         sync: false
       - key: ALLOWED_ORIGINS

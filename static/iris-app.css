@@ -53,8 +53,25 @@ body {
 .boot-loading {
   height: 100vh;
   display: flex;
+  flex-direction: column;
+  gap: var(--lore-space-3);
   align-items: center;
   justify-content: center;
+  text-align: center;
+  padding: var(--lore-space-6);
+}
+
+.boot-error-heading {
+  font-family: var(--lore-font-display);
+  font-size: var(--lore-text-xl);
+  color: var(--lore-text-primary);
+}
+
+.boot-error-detail {
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-sm);
+  color: var(--lore-severity-high);
+  max-width: 560px;
 }
 
 .boot-mark {
