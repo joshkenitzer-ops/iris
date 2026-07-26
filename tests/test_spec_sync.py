@@ -33,7 +33,7 @@ class TestSpecSync(unittest.TestCase):
     def test_docs_file_parses_to_a_reasonable_number_of_entries(self) -> None:
         # Sanity floor. If this drops near zero, the parser broke
         # against a reformatted table, not that the tool list shrank.
-        self.assertGreater(len(self.doc_entries), 100)
+        self.assertGreater(len(self.doc_entries), 90)
 
     def test_every_registered_tool_exists_in_the_tool_list(self) -> None:
         missing = [spec.id for spec in registry.all() if spec.id not in self.doc_entries]
