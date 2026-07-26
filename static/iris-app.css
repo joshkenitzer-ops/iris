@@ -142,7 +142,8 @@ body {
 /* ── Empty state ── */
 
 .empty-state {
-  flex: 1;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -150,6 +151,9 @@ body {
   text-align: center;
   padding: var(--lore-space-12) var(--lore-space-6);
   gap: var(--lore-space-6);
+  /* Sits above .chat-main's scroll area but below the header */
+  z-index: 1;
+  background: var(--lore-surface-base);
 }
 
 .empty-state-title {
@@ -171,11 +175,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--lore-space-2);
-  counter-reset: steps;
 }
 
 .empty-state-steps li {
-  counter-increment: steps;
   display: flex;
   align-items: center;
   gap: var(--lore-space-3);
@@ -183,8 +185,7 @@ body {
   font-size: var(--lore-text-sm);
 }
 
-.empty-state-steps li::before {
-  content: counter(steps);
+.empty-state-steps li .step-num {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
@@ -212,6 +213,7 @@ body {
   padding: var(--lore-space-6);
   display: flex;
   flex-direction: column;
+  position: relative;
   /* Deliberately NOT justify-content: flex-end. That was tried, and
      it breaks scrolling outright: on a flex container that scrolls,
      content overflowing past the top edge becomes unreachable, so a
