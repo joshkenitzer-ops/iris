@@ -496,8 +496,17 @@ def stream_turn(
             for block in deterministic_blocks:
                 try:
                     result = registry.dispatch(block.name, block.input, session=session)
-                    content = {"passed": result.passed, "findings": result.findings, "data": {}}
-                    if result.passed and result.data and result.data.get("file_id"):
+                    # Preserve data when it contains file_id — the model needs
+                    # to know a file was rendered. Strip data for pure check
+                    # tools (the ones that return candidate lists, scores, etc.)
+                    # since those payloads bloat the model context unnecessarily.
+                    has_file = result.data and result.data.get("file_id")
+                    content = {
+                        "passed": result.passed,
+                        "findings": result.findings,
+                        "data": result.data if has_file else {},
+                    }
+                    if has_file:
                         file_id = result.data["file_id"]
                         filename = result.data.get("filename", "download")
                         rendered = session.get_rendered_file(file_id) if session else None
