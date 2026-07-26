@@ -127,6 +127,8 @@ async function withSessionRetry(makeRequest) {
     return response;
   }
   currentSessionId = await createNewSession();
+  document.getElementById("empty-state").hidden = true;
+  document.getElementById("composer").hidden = false;
   appendMessage(
     "system",
     "That session had expired, most likely because the server restarted. " +
@@ -146,13 +148,27 @@ async function withSessionRetry(makeRequest) {
 async function initApp() {
   wireComposer();
   document.getElementById("new-session-btn").addEventListener("click", startNewSession);
+  document.getElementById("start-session-btn").addEventListener("click", startFirstSession);
+  // Don't create a session eagerly — wait for the user to click
+  // "Start a session." The composer stays hidden until that click.
+}
+
+async function startFirstSession() {
+  const btn = document.getElementById("start-session-btn");
+  btn.disabled = true;
+  btn.textContent = "Starting...";
   try {
-    currentSessionId = await bootstrapSession();
+    currentSessionId = await createNewSession();
+    // Swap the empty state for the working surface
+    document.getElementById("empty-state").hidden = true;
+    document.getElementById("composer").hidden = false;
+    document.getElementById("message-input").focus();
   } catch (err) {
-    appendMessage(
-      "error",
-      "Could not start a session. Refresh the page to try again; if it keeps happening, the backend may be down."
-    );
+    btn.disabled = false;
+    btn.textContent = "Start a session";
+    appendMessage("error", "Could not start a session. Check your connection and try again.");
+    document.getElementById("empty-state").hidden = true;
+    document.getElementById("composer").hidden = false;
   }
 }
 
@@ -187,6 +203,8 @@ async function startNewSession() {
   try {
     clearAttachmentChip();
     document.getElementById("message-list").innerHTML = "";
+    document.getElementById("empty-state").hidden = true;
+    document.getElementById("composer").hidden = false;
     currentSessionId = await createNewSession();
     appendMessage("system", "Started a new session.");
   } catch (err) {

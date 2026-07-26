@@ -68,6 +68,16 @@
   </header>
 
   <main class="chat-main">
+    <div id="empty-state" class="empty-state">
+      <h1 class="lore-display empty-state-title">Iris</h1>
+      <p class="empty-state-tagline">Resume and cover letter tailoring, backed by a harness that checks its own work.</p>
+      <ol class="empty-state-steps">
+        <li>Attach your master resume</li>
+        <li>Paste a job description</li>
+        <li>Get a tailored package with every check already run</li>
+      </ol>
+      <button id="start-session-btn" class="lore-btn-primary empty-state-btn">Start a session</button>
+    </div>
     <div id="message-list" class="message-list" aria-live="polite"></div>
 
     <div id="status-indicator" class="status-indicator" hidden>
@@ -76,7 +86,7 @@
     </div>
   </main>
 
-  <footer class="composer">
+  <footer class="composer" id="composer" hidden>
     <div id="attachment-chip" class="attachment-chip" hidden>
       <span id="attachment-chip-label"></span>
       <button id="attachment-chip-remove" class="attachment-chip-remove" aria-label="Remove attachment">&times;</button>

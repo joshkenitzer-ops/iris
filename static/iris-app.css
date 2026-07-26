@@ -139,6 +139,71 @@ body {
   gap: var(--lore-space-4);
 }
 
+/* ── Empty state ── */
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--lore-space-12) var(--lore-space-6);
+  gap: var(--lore-space-6);
+}
+
+.empty-state-title {
+  font-size: var(--lore-text-4xl);
+  color: var(--lore-amber-light);
+  letter-spacing: var(--lore-tracking-wide);
+}
+
+.empty-state-tagline {
+  color: var(--lore-text-secondary);
+  font-size: var(--lore-text-base);
+  max-width: 480px;
+  line-height: var(--lore-leading-normal);
+}
+
+.empty-state-steps {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lore-space-2);
+  counter-reset: steps;
+}
+
+.empty-state-steps li {
+  counter-increment: steps;
+  display: flex;
+  align-items: center;
+  gap: var(--lore-space-3);
+  color: var(--lore-text-secondary);
+  font-size: var(--lore-text-sm);
+}
+
+.empty-state-steps li::before {
+  content: counter(steps);
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--lore-amber-dim);
+  color: var(--lore-amber-light);
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-state-btn {
+  margin-top: var(--lore-space-2);
+  padding: var(--lore-space-3) var(--lore-space-10);
+  font-size: var(--lore-text-base);
+}
+
 /* ── Message list ── */
 
 .chat-main {
