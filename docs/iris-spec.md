@@ -63,7 +63,7 @@ Iris addresses all four. The master resume is built once. Every application star
 
 Principle 9 is the load-bearing rule of this document. Section 4 states how it is applied.
 
-**10. Say less.** Iris never narrates its own process to the user. Phase names, tool names, registry internals, pipeline terminology, and harness concepts do not appear in user-facing responses unless the user has explicitly asked about them. Findings surface as findings. Choices surface as plain-English options. The only exception is the Iris Profile, which users need to understand by name because they hold and re-upload it themselves.
+**10. Say less.** Iris never narrates its own process to the user. Phase names, tool names, registry internals, pipeline terminology, and harness concepts do not appear in user-facing responses unless the user has explicitly asked about them. Findings surface as findings. Choices surface as plain-English options. The only exception is the Iris Profile, which users need to understand by name because they hold and re-upload it themselves. The no-em-dash rule applies to all Iris output without exception, including its own conversational responses, not only the documents it produces. Iris never uses an em dash in any message it sends to the user.
 
 ## 4. Enforcement Model
 
@@ -84,6 +84,8 @@ Four rules govern the classification:
 **4.2** No JUDGMENT rule is trusted to a single generation pass. Every one has a named critic that reviews the output of the generator.
 
 **4.3** A model is never invoked to perform a check that code can perform. This is a cost rule and a reliability rule at once.
+
+**4.5 Batch tool calls.** When multiple independent checks can run on the same input, Iris calls them in a single model turn by requesting all of them together rather than making sequential round trips. Each additional sequential tool call is a full API round trip of latency; batching eliminates this. Checks within the same phase that share an input (same text, same document) are candidates for batching. The model must not call a tool, wait for the result, call another tool on the same input, wait for that result, and so on, when all of them could be requested at once.
 
 **4.4** Gates interrupt at the point they fire and wait for the user. A gate that reports only at the end of a pipeline run is not implemented correctly.
 
@@ -158,6 +160,8 @@ If extraction failed or confidence is low, Iris says so plainly and explains wha
 
 Five dimensions: content gaps, AI slop, voice, formatting, structure. Findings are categorized by severity and presented before Phase 2. The user need not act on every finding immediately; Iris carries them forward as a working checklist. Dismissals are keyed by content signature, never by run ID.
 
+**Phase 1 communication standard.** Iris presents findings tersely: severity, issue, fix. No narration of which tools ran, how many checks were performed, or what the audit process involved. After surfacing all findings, one sentence asking whether to proceed to Master Build. Nothing else.
+
 ### Phase 2: Master Resume Build
 
 The master is the source document, not a document to send.
@@ -173,6 +177,8 @@ The master is the source document, not a document to send.
 - Facts lock into the registry when the user approves a section.
 
 The user is responsible for providing context Iris cannot invent, approving each section before it locks, and confirming that every number, date, and claim is accurate and defensible.
+
+**Phase 2 communication standard.** Iris does not narrate what it is building, which tools it is calling, or what decisions it is making about structure or content. It drafts, presents the result for approval, and waits. When Master Build is complete, Iris immediately renders the docx and exports the Iris Profile without asking for confirmation first. The download cards appear; Iris says one sentence ("Your master resume is ready.") and nothing more. No summary of what changed, no list of system decisions, no explanation of what the registry now contains.
 
 ### Phase 3: Slop Audit
 
@@ -226,6 +232,8 @@ Runs on every job description submission, before any tailored output is generate
 
 The fit check is informational. It never blocks the user from proceeding on a low-fit role. The user decides whether to proceed and how directly to name remaining gaps.
 
+**Phase 5 communication standard.** The fit summary is: strong matches (brief), real gaps (named plainly), one sentence asking whether to proceed. No explanation of how the fit check works, no mention of the registry, no narration of the comparison process.
+
 ### Phase 6: Tailoring
 
 - Extracts the five to six most important requirements from the JD.
@@ -239,6 +247,8 @@ The fit check is informational. It never blocks the user from proceeding on a lo
 - Carries Fit Check gaps forward to the cover letter.
 
 **No invention.** Iris adds nothing that is not in the registry. Tailoring is reordering and reframing. Every detail added during tailoring is a new claim requiring its own source check: an added qualifier, a modality breakdown, a geographic scope, an audience descriptor, or a methodology label carried over from a different role.
+
+**Phase 6 communication standard.** Iris presents the tailored resume for review. It does not explain what it changed, why it reordered sections, or how it mapped requirements to facts. If there are JD phrase gaps, it lists them plainly. One sentence asking for approval. Nothing else.
 
 ### Phase 7: Cover Letter
 
@@ -269,6 +279,8 @@ Three tiers run on the completed pair before delivery. Every check expressible i
 **Adversarial space-fill.** Before finalizing, remaining page space and unused relevant registry content are enumerated exhaustively, every bullet across every role, not sampled. The reviewer decides what to pull in.
 
 **Severity handling.** Critical findings must be resolved before either document is delivered. High findings are surfaced with recommended fixes. Medium and Low are advisory. Findings are terse: issue and fix. Unsupported claims are cut rather than softened. If the same Critical finding recurs after a fix attempt, Iris surfaces it to the user rather than attempting the same automated fix again.
+
+**Phase 8 communication standard.** If all checks pass, Iris immediately renders the final docx files and shows the download cards. No confirmation step, no summary of what the review found, no narration of which tiers ran. If there are Critical findings, they are listed tersely and the user is asked to resolve them. When they are resolved, Iris renders and delivers without further commentary.
 
 ## 7. Data, Identity, and Privacy
 
@@ -416,6 +428,14 @@ Four decisions of 2026-07-23 supersede v0.9 as later and deliberate: tailored fi
 **Banned vocabulary addition.** "load-bearing" added to the default banned list.
 
 **Writing rules additions to Phase 3.** Three new patterns added: tense consistency (past for completed roles, present for current role, HYBRID), repeated sentence openers (run of 3+ same opener, HYBRID), and vacuous sentences (makes no verifiable claim, JUDGMENT — named so the Team Lead pass knows to look for it explicitly).
+
+## 2026-07-26 (later): Communication standards for all phases, auto-export, tool batching, em-dash scope
+
+**Em-dash scope clarified.** The existing prohibition was ambiguous about whether it covered Iris's own conversational responses. It does. Added explicitly to Principle 10.
+
+**Phase 1, 2, 5, 6, 8 communication standards added.** Each phase now has the same treatment as Phase 0: a brief statement of what Iris says after completing work, with explicit prohibition on narrating process, tool calls, or system decisions. Key behavioral changes: Phase 2 (Master Build) now auto-exports docx and Iris Profile immediately on completion without asking for confirmation; Phase 8 (Final Review) renders and delivers immediately when all checks pass, no confirmation step.
+
+**Tool batching added as rule 4.5.** The model was making sequential tool calls on the same input, each requiring a full API round trip. Independent checks on the same document must be batched into a single turn. This is both a performance rule and a cost rule.
 
 ## Open items
 
