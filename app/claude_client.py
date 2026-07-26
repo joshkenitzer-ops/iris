@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 
 import anthropic
 
-from app.config import MODEL
+from app.config import MAX_RESPONSE_TOKENS, MODEL
 from app.enforcement import registry
 from app.session import Session
 
@@ -99,7 +99,7 @@ def run_turn(
     messages: List[Dict[str, Any]],
     session: Optional[Session] = None,
     tool_ids: Optional[List[str]] = None,
-    max_tokens: int = 4096,
+    max_tokens: int = MAX_RESPONSE_TOKENS,
     max_tool_iterations: int = 12,
 ) -> Dict[str, Any]:
     """Run one user turn to completion, dispatching every tool call the
@@ -155,6 +155,12 @@ def run_turn(
             logger.exception("Anthropic API call failed (status=%s)", status)
             raise UpstreamModelError(status, str(exc)) from exc
 
+        logger.info(
+            "Claude responded: stop_reason=%s, blocks=%s",
+            response.stop_reason,
+            [block.type for block in response.content],
+        )
+
         working_messages = working_messages + [
             {"role": "assistant", "content": _blocks_to_plain(response.content)}
         ]
@@ -163,6 +169,42 @@ def run_turn(
             final_text = "".join(
                 block.text for block in response.content if block.type == "text"
             )
+
+            # A truncated response is not a successful one. Hitting the
+            # output cap mid-answer produces stop_reason="max_tokens",
+            # and if the cut landed before any complete text block this
+            # used to return {"text": ""} with a 200, which the UI
+            # rendered as an empty bubble: the user saw the assistant
+            # reply with nothing and had no way to tell whether it
+            # failed, was still working, or had genuinely said nothing.
+            if response.stop_reason == "max_tokens":
+                logger.warning(
+                    "Response hit the %d-token output cap (%d chars of text recovered)",
+                    max_tokens,
+                    len(final_text),
+                )
+                notice = (
+                    "\n\n[This response was cut off at the output limit. Ask for it in "
+                    "smaller pieces, for example one section or one check at a time.]"
+                )
+                return {"text": (final_text + notice) if final_text else notice.strip(), "messages": working_messages}
+
+            if not final_text.strip():
+                # Any other empty completion is a real anomaly worth
+                # surfacing rather than rendering as silence.
+                logger.error(
+                    "Empty completion with stop_reason=%s and blocks=%s",
+                    response.stop_reason,
+                    [block.type for block in response.content],
+                )
+                return {
+                    "text": (
+                        "The assistant returned an empty response. Try rephrasing, or "
+                        "start a new session if this keeps happening."
+                    ),
+                    "messages": working_messages,
+                }
+
             return {"text": final_text, "messages": working_messages}
 
         tool_results = []
