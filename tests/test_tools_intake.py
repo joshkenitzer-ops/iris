@@ -198,5 +198,81 @@ class TestRunBatchChecksTextResolution(unittest.TestCase):
         self.assertTrue(result.passed)
 
 
+class TestRunBatchChecksAcceptsHybrid(unittest.TestCase):
+    """Regression coverage for closing the spec/code gap: the spec says
+    Phase 1's 15 checks "collapse to one turn" including the HYBRID
+    nominators, but run_batch_checks used to reject anything that
+    wasn't TOOL/GATE, forcing 8 of Phase 1's 15 checks into individual
+    round trips (one of them, nominate_tense_inconsistency_candidates,
+    multiplied by role count). Every HYBRID nominator's findings already
+    embed the flagged text inline, so there's no data field a batched
+    call would be discarding that the model actually needs."""
+
+    def test_hybrid_check_runs_in_the_batch_instead_of_being_rejected(self) -> None:
+        session, attachment_id = _session_with_docx_attachment(
+            ["Led the migration and the rollout and the cleanup and the postmortem."]
+        )
+        ingest_document(attachment_id, session=session)
+        # T-3.13 check_run_on_sentences is HYBRID — previously this would
+        # have come back as "T-3.13 is HYBRID — call it separately."
+        result = run_batch_checks(
+            tool_ids=["T-3.13"], inputs={"attachment_id": attachment_id}, session=session
+        )
+        self.assertFalse(result.passed)
+        self.assertTrue(any("run-on" in f["issue"].lower() for f in result.findings))
+        self.assertEqual(result.data["summary"], [{"tool_id": "T-3.13", "passed": False}])
+
+    def test_hybrid_and_tool_checks_batch_together_in_one_call(self) -> None:
+        session, attachment_id = _session_with_docx_attachment(
+            ["Used seamlessly integrated systems and participated in the rollout."]
+        )
+        ingest_document(attachment_id, session=session)
+        # T-3.3 (TOOL) and T-3.11 (HYBRID) in the same call — this is
+        # exactly the mixed Phase 1 batch the model is now told to send.
+        result = run_batch_checks(
+            tool_ids=["T-3.3", "T-3.11"], inputs={"attachment_id": attachment_id}, session=session
+        )
+        self.assertFalse(result.passed)
+        self.assertTrue(any("seamlessly" in f["issue"] for f in result.findings))
+        self.assertTrue(any("hedge" in f["issue"].lower() for f in result.findings))
+
+    def test_hybrid_check_with_extra_required_arg_reads_it_from_shared_inputs(self) -> None:
+        session, attachment_id = _session_with_docx_attachment(
+            ["Worked extensively with Kubernetes to ship the platform."]
+        )
+        ingest_document(attachment_id, session=session)
+        # T-3.16 needs known_terms in addition to text/attachment_id.
+        result = run_batch_checks(
+            tool_ids=["T-3.16"],
+            inputs={"attachment_id": attachment_id, "known_terms": ["Kubernetes"]},
+            session=session,
+        )
+        self.assertFalse(result.passed)
+        self.assertTrue(any("Kubernetes" in f["issue"] for f in result.findings))
+
+    def test_judgment_and_human_kinds_are_still_rejected(self) -> None:
+        # Confirms the loosened gate didn't turn into "accept everything" —
+        # only TOOL/GATE/HYBRID dispatch here; nothing in the registry is
+        # actually JUDGMENT/HUMAN kind right now, so this locks in intent
+        # via the source check_run_on_sentences already exercises: kinds
+        # outside (TOOL, GATE, HYBRID) still produce the "call it
+        # separately" finding rather than being silently dispatched.
+        from app.enforcement import EnforcementKind, registry
+
+        non_batchable = [
+            spec.id for spec in registry._by_id.values()
+            if spec.kind not in (EnforcementKind.TOOL, EnforcementKind.GATE, EnforcementKind.HYBRID)
+        ]
+        if not non_batchable:
+            self.skipTest("No JUDGMENT/HUMAN-kind tool registered to exercise this against.")
+        session, attachment_id = _session_with_docx_attachment(["Jane Doe"])
+        ingest_document(attachment_id, session=session)
+        result = run_batch_checks(
+            tool_ids=[non_batchable[0]], inputs={"attachment_id": attachment_id}, session=session
+        )
+        self.assertFalse(result.passed)
+        self.assertIn("call it separately", result.findings[0]["issue"])
+
+
 if __name__ == "__main__":
     unittest.main()

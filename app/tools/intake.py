@@ -548,21 +548,32 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
     id="T-9.15",
     name="run_batch_checks",
     description=(
-        "Runs multiple TOOL-kind checks in a single harness call, "
-        "eliminating per-check model round trips. "
+        "Runs multiple TOOL, GATE, and HYBRID checks in a single harness "
+        "call, eliminating per-check model round trips. HYBRID nominators "
+        "are included because they're deterministic functions too — their "
+        "findings already contain the flagged text, so there is nothing "
+        "extra to adjudicate in a separate turn; just read the findings "
+        "this call returns like any other check. "
         "IMPORTANT: never pass raw docx_base64 bytes or a pasted-back copy "
         "of extracted_text in inputs — pass attachment_id and the harness "
         "resolves both docx bytes and cached extracted text server-side, "
         "keeping large payloads out of model context and out of the "
         "model's own output entirely. "
-        "For Phase 1 (Audit): tool_ids=[T-3.1,T-3.3,T-3.4,T-3.5,T-3.6,T-3.7,T-3.8], "
-        "inputs={attachment_id: <id>} (requires ingest_document to have run "
-        "on that attachment first, so the text is cached). "
+        "For Phase 1 (Audit): tool_ids=[T-3.1,T-3.3,T-3.4,T-3.5,T-3.6,T-3.7,"
+        "T-3.8,T-3.9,T-3.10,T-3.11,T-3.12,T-3.13,T-3.16,T-3.18], "
+        "inputs={attachment_id: <id>, known_terms: [...]} (attachment_id "
+        "requires ingest_document to have run on that attachment first, so "
+        "the text is cached; known_terms is only read by T-3.16 — list the "
+        "resume's proper nouns/acronyms worth a first-use explainer check). "
+        "T-3.17 (nominate_tense_inconsistency_candidates) is the one Phase "
+        "1 check NOT included here — it needs a specific role-block excerpt "
+        "plus is_current_role per call, so call it directly, once per role. "
         "For Phase 4 (Formatting): tool_ids=[T-4.1,T-4.2,T-4.3,T-4.4,T-4.9], "
         "inputs={attachment_id: <id>}. "
         "For Phase 8 (Final Review): tool_ids=[T-8.5,T-8.6,T-8.7,T-8.12,T-8.14,T-8.15], "
         "inputs={attachment_id: <id>}. "
-        "Only TOOL and GATE kind items are accepted."
+        "TOOL, GATE, and HYBRID kind items are accepted; JUDGMENT and HUMAN "
+        "are not — those need a real model turn, call them separately."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={
@@ -661,7 +672,15 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
     for tid in tool_ids:
         try:
             spec = registry.get(tid)
-            if spec.kind not in (EK.TOOL, EK.GATE):
+            # HYBRID nominators (T-3.9 through T-3.16, T-3.18) are
+            # dispatchable here too: every one of them is a plain
+            # deterministic function under the hood, same as TOOL/GATE,
+            # and every finding it returns already embeds the flagged
+            # text/candidate directly in `issue` - none of them rely on
+            # the `data` field this function already strips. Only
+            # JUDGMENT/HUMAN kinds have no deterministic handler to run
+            # at all and genuinely need a separate model turn.
+            if spec.kind not in (EK.TOOL, EK.GATE, EK.HYBRID):
                 all_findings.append({
                     "severity": "High",
                     "issue": f"{tid} is {spec.kind.name} — call it separately.",
