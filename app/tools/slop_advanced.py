@@ -346,3 +346,150 @@ def nominate_banned_term_misuse_candidates(text: str) -> ToolResult:
         for c in candidates
     ]
     return ToolResult(passed=len(candidates) == 0, findings=findings, data={"candidates": candidates})
+
+
+# ---------------------------------------------------------------------------
+# T-3.17: Tense consistency check (HYBRID nominator)
+# ---------------------------------------------------------------------------
+
+
+@tool(
+    id="T-3.17",
+    name="nominate_tense_inconsistency_candidates",
+    description=(
+        "Nominates sentences in a role block that may be using the wrong "
+        "tense. Completed roles should use past tense throughout; the "
+        "current role should use present tense throughout. The nominator "
+        "is cheap and over-inclusive: it flags any sentence containing a "
+        "present-tense verb in a completed role block, or a past-tense "
+        "verb in the current role block, and hands the candidates to "
+        "judgment to confirm whether the shift is intentional. "
+        "Args: `text` is the role block text; `is_current_role` indicates "
+        "whether this is the user's current position."
+    ),
+    kind=EnforcementKind.HYBRID,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "is_current_role": {
+                "type": "boolean",
+                "description": "True if this is the user's current role (ongoing).",
+            },
+        },
+        "required": ["text", "is_current_role"],
+    },
+)
+def nominate_tense_inconsistency_candidates(text: str, is_current_role: bool) -> ToolResult:
+    import re
+
+    # Surface indicators only: auxiliary verbs are the cheapest signal.
+    # Present-tense markers (wrong in a completed role):
+    _PRESENT = re.compile(
+        r"\b(am|is|are|have|has|do|does|lead|manage|build|drive|"
+        r"oversee|develop|create|run|own|coordinate|support)\b",
+        re.IGNORECASE,
+    )
+    # Past-tense markers (wrong in the current role):
+    _PAST = re.compile(
+        r"\b(was|were|had|did|led|managed|built|drove|oversaw|"
+        r"developed|created|ran|owned|coordinated|supported)\b",
+        re.IGNORECASE,
+    )
+
+    pattern = _PRESENT if not is_current_role else _PAST
+    wrong_label = "present" if not is_current_role else "past"
+    expected = "past" if not is_current_role else "present"
+
+    candidates = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+        s = sentence.strip()
+        if not s:
+            continue
+        if pattern.search(s):
+            candidates.append(s)
+
+    findings = [
+        {
+            "severity": "Medium",
+            "issue": (
+                f"Possible tense inconsistency in a "
+                f"{'current' if is_current_role else 'completed'} role: "
+                f"\"{c}\" contains a {wrong_label}-tense verb. "
+                f"Expected {expected} tense throughout."
+            ),
+            "fix": "Confirm whether the tense shift is intentional. If not, rewrite in the expected tense.",
+        }
+        for c in candidates
+    ]
+    return ToolResult(
+        passed=len(candidates) == 0,
+        findings=findings,
+        data={"candidates": candidates, "is_current_role": is_current_role},
+    )
+
+
+# ---------------------------------------------------------------------------
+# T-3.18: Repeated sentence opener check (HYBRID nominator)
+# ---------------------------------------------------------------------------
+
+
+@tool(
+    id="T-3.18",
+    name="nominate_repeated_opener_candidates",
+    description=(
+        "Nominates runs of three or more consecutive sentences (or bullets) "
+        "that begin with the same word or structural pattern. A repeated "
+        "opener is a structural AI tell even when each sentence is otherwise "
+        "clean. The nominator flags the run and hands it to judgment to "
+        "confirm whether the repetition is intentional emphasis or "
+        "structural laziness."
+    ),
+    kind=EnforcementKind.HYBRID,
+    input_schema={
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+        "required": ["text"],
+    },
+)
+def nominate_repeated_opener_candidates(text: str) -> ToolResult:
+    import re
+
+    # Split on sentence-ending punctuation OR bullet newlines.
+    sentences = [
+        s.strip().lstrip("-•*·").strip()
+        for s in re.split(r"(?<=[.!?])\s+|\n", text)
+        if s.strip()
+    ]
+
+    def first_word(s: str) -> str:
+        words = s.split()
+        return words[0].lower() if words else ""
+
+    runs = []
+    i = 0
+    while i < len(sentences):
+        opener = first_word(sentences[i])
+        if not opener:
+            i += 1
+            continue
+        j = i + 1
+        while j < len(sentences) and first_word(sentences[j]) == opener:
+            j += 1
+        if j - i >= 3:
+            runs.append({"opener": opener, "sentences": sentences[i:j]})
+        i = j if j > i else i + 1
+
+    findings = [
+        {
+            "severity": "Low",
+            "issue": (
+                f"Repeated opener '{r['opener']}' across "
+                f"{len(r['sentences'])} consecutive sentences. "
+                f"First few: {r['sentences'][:3]}"
+            ),
+            "fix": "Vary the sentence structure or opener unless the repetition is intentional emphasis.",
+        }
+        for r in runs
+    ]
+    return ToolResult(passed=len(runs) == 0, findings=findings, data={"runs": runs})

@@ -4,9 +4,7 @@
 
 Supersedes the Hermes Product Spec line, v0.1 through v0.9. Manual version bumps are retired. Product name changed from Hermes to Iris on 2026-07-21.
 
-Companion file: `iris-tool-list.md`. This document states rules. The tool list is the enforcement inventory. The two files change at different rates and are versioned separately.
-
-**Citation convention.** Tool-list items carry a `T-` prefix and are cited inline as `(T-3.1)`. Bare decimal numbers in this file are its own section numbers and never refer to the tool list. The prefix exists because the two numbering schemes otherwise collide: section 5.9 here and item 5.9 there are unrelated rules.
+Companion file: `iris-tool-list.md`. This document states rules. The tool list is the enforcement inventory, and rules here cite its item IDs. The two files change at different rates and are versioned separately.
 
 Naming: this file is the spec. **Constitution** names its stable tier (Part I), not the file.
 
@@ -18,7 +16,7 @@ Naming: this file is the spec. **Constitution** names its stable tier (Part I), 
 
 **Part II, Decision Log.** Specific calls, appended freely, dated. Periodically consolidated upward into Part I.
 
-**Amendment protocol.** Binding on the development harness and on any model editing this file. It does not bind Iris itself: Iris operates under the spec at runtime and has no authority to amend it.
+**Amendment protocol, binding on the harness and on any model operating under this file:**
 
 1. A decision that changes a rule is written into this file in the same turn it is made. Narrating a change without writing it is an incomplete turn.
 2. The model drafts the amendment as a diff and shows it. It never edits this file silently.
@@ -60,10 +58,12 @@ Iris addresses all four. The master resume is built once. Every application star
 5. **Always-on enforcement.** Quality checks run continuously, not as a final step.
 6. **Fit before effort.** Iris assesses fit before generating a package and surfaces real gaps. This is sequencing, not gatekeeping. The fit check always runs first and never blocks the user from proceeding.
 7. **Honesty over optimization.** Gaps identified at fit check are named directly in the cover letter. Iris does not hide weaknesses behind stronger framing elsewhere.
-8. **No hidden-text tactics.** Iris never inserts invisible, white-on-white, or otherwise concealed text, for any reason, including keyword matching. Every optimization is visible to a human reader. This is a safety rule, not only an honesty rule: text a human reader cannot see but a downstream parser can is a prompt-injection vector into whatever system reads the document. It is immutable and admits no exception. Because the ban is absolute, its enforcement is a positive visibility check rather than a blocklist of known concealment techniques (T-3.2).
+8. **No hidden-text tactics.** Iris never inserts invisible, white-on-white, or otherwise concealed text, for any reason, including keyword matching. Every optimization is visible to a human reader.
 9. **Programmatic verification.** Quality checks that can be expressed in code, word counts, banned terms, character-level formatting, are checked in code, not inferred from model output.
 
 Principle 9 is the load-bearing rule of this document. Section 4 states how it is applied.
+
+**10. Say less.** Iris never narrates its own process to the user. Phase names, tool names, registry internals, pipeline terminology, and harness concepts do not appear in user-facing responses unless the user has explicitly asked about them. Findings surface as findings. Choices surface as plain-English options. The only exception is the Iris Profile, which users need to understand by name because they hold and re-upload it themselves.
 
 ## 4. Enforcement Model
 
@@ -85,13 +85,11 @@ Four rules govern the classification:
 
 **4.3** A model is never invoked to perform a check that code can perform. This is a cost rule and a reliability rule at once.
 
-**4.4** Gates in Phases 0 through 7 interrupt at the point they fire and wait for the user. A gate that reports only at the end of a pipeline run is not implemented correctly. Phase 8 is the named exception: Final Review is an end-of-run verification stage by design, and its gates are expected to batch.
+**4.4** Gates interrupt at the point they fire and wait for the user. A gate that reports only at the end of a pipeline run is not implemented correctly.
 
-The current distribution across the 135 items lives in the tool list, not here. Restating it in two files guarantees drift on the next edit.
+Current distribution: 135 items. 73 TOOL, 19 GATE, 14 HYBRID, 35 JUDGMENT, 5 HUMAN.
 
 ## 5. Locked Facts Registry
-
-**Precedence.** This section is authoritative for the registry's rules and data model. Tool-list section 16 restates it with implementation notes; where the two differ, this section governs and the tool list is corrected.
 
 The registry is the single source of truth for every tailored version. Every number, date, and factual claim the user approves is stored as a discrete structured fact, not as prose embedded in a bullet.
 
@@ -118,7 +116,7 @@ The registry is the single source of truth for every tailored version. Every num
 
 **5.7 Granularity.** A fact is the smallest independently verifiable assertion. One resume bullet typically yields three or four.
 
-**5.8 Provenance.** Generation emits fact ids alongside text. Every span of generated resume or cover letter content carries a registry fact id. This is what makes the no-invention rule a set operation rather than a heuristic, and it is a requirement on the generation step in Phase 2 and Phase 6, not an optional optimization (T-6.12).
+**5.8 Provenance.** Generation emits fact ids alongside text. Every span in a tailored document carries provenance. This is what makes the no-invention rule a set operation rather than a heuristic.
 
 **5.9 Empty registry.** If the registry contains zero approved facts, Fit Check and Tailoring are blocked and the user is directed to complete Master Resume Build.
 
@@ -145,12 +143,20 @@ Three entry paths: performance document, existing resume, start from scratch. Al
 - Colleague names are replaced with generic labels before extraction completes. Users are prompted to remove sensitive third-party content before uploading.
 - **Low-confidence extraction.** If a document cannot be extracted with sufficient confidence, Iris flags it rather than presenting partial content as complete, and routes the user to manual review or another entry path before Phase 1. Confidence is evaluated per section, fail-closed. Signals: absent text layer with low OCR confidence, replacement or control character rate, failure to detect role blocks with parseable date ranges, date parse failure rate. Threshold values are code config (see amendment protocol rule 5).
 
+**Phase 0 communication standard.** After a successful extraction, Iris responds with one short confirmation sentence and then offers the user their next choice. It does not narrate the extraction process, list extracted roles, produce a structural inventory table, or explain how the registry or pipeline work internally. The user knows what is in their own resume. The only useful information at this point is whether extraction succeeded and what to do next.
+
+Post-extraction response form:
+
+> Got it — your resume came through cleanly. What would you like to do first?
+> - **Audit my resume** — I'll review it for issues before we change anything.
+> - **Tailor for a job** — paste a job description and we'll assess the fit.
+> - **Pick up where I left off** — upload your Iris Profile to restore your previous session.
+
+If extraction failed or confidence is low, Iris says so plainly and explains what the user should do next, without technical detail about why. The same principle applies after every completed phase: one confirmation, then the next plain-English choice. No phase names, no tool names, no registry references in any user-facing response unless the user has explicitly asked.
+
 ### Phase 1: Audit
 
-Five dimensions: content gaps, AI slop, voice, formatting, structure. Findings are categorized by severity and presented before Phase 2.
-
-**Critical disposition.** A Critical finding raised at Audit must be dispositioned before Phase 2 begins: either fixed, or explicitly acknowledged with a stated reason. Acknowledgment is not dismissal. An acknowledged Critical persists and resurfaces at Final Review, where resolution is mandatory and acknowledgment is not offered (T-1.8). Severity assignment is held tight deliberately, since a rubric that over-assigns Critical converts this into a spurious block.
- The user need not act on every finding immediately; Iris carries them forward as a working checklist. Dismissals are keyed by content signature, never by run ID.
+Five dimensions: content gaps, AI slop, voice, formatting, structure. Findings are categorized by severity and presented before Phase 2. The user need not act on every finding immediately; Iris carries them forward as a working checklist. Dismissals are keyed by content signature, never by run ID.
 
 ### Phase 2: Master Resume Build
 
@@ -163,25 +169,8 @@ The master is the source document, not a document to send.
 - **Role summaries.** One to two sentences before the bullets for each role.
 - Audit findings surface as prompts during the build.
 - Internal project names are flagged with a prompt for a plain descriptor.
-- **careerInventory schema.** A structured object, not free text. No fixed section count. Relative order is locked: NAME, HEADLINE, CONTACT, SUMMARY, SKILLS, EXPERIENCE, EDUCATION, PROJECTS, PUBLICATIONS. Every service that reads or writes the inventory (`buildService`, `tailorService`, `docxService`) uses this same order; none may reinterpret it locally.
-- **Section flags.** Two independent flags, not one. Inventory-required means the user must supply it before Phase 2 completes. Output-required means the rendered document must contain it. They come apart: HEADLINE and SUMMARY are Iris-generated, so requiring them of the user is incoherent while requiring them in output is not (T-0.6, T-8.5).
-
-| Section | In inventory | In output |
-| --- | --- | --- |
-| NAME | Required | Required |
-| HEADLINE | Iris-generated | Required |
-| CONTACT | Required | Required |
-| SUMMARY | Iris-generated | Required |
-| SKILLS | Required | Required |
-| EXPERIENCE | Required | Required |
-| EDUCATION | Optional | Omit if empty |
-| PROJECTS | Optional | Conditional, see Phase 6 |
-| PUBLICATIONS | Optional | Omit if empty |
-
-- **PROJECTS definition.** Work performed outside the scope of employment. Work performed within a role is an EXPERIENCE bullet, never a PROJECTS entry. This is a classification rule, not a judgment call (T-0.5).
-- **CONTACT fields.** Exactly four pipe-delimited fields. Email, phone, and location are required and must be non-empty, location at city and state granularity and never a street address. LinkedIn is optional and blank-but-present when absent. Blank-but-present governs rendering for every field, so a missing value cannot shift the fields after it; it does not make a required field satisfiable by leaving it blank.
-- Facts lock into the registry when the user approves a section (T-2.10).
-- Every span of generated content carries the fact id it derives from, per 5.8. A span with no id cannot pass Final Review (T-6.12).
+- **careerInventory schema.** A structured object, not free text. No fixed section count: each section is declared required or optional, and empty optional sections are omitted rather than rendered as an empty heading. Relative order is locked: NAME, HEADLINE, CONTACT, SUMMARY, SKILLS, EXPERIENCE, EDUCATION, PROJECTS, PUBLICATIONS. CONTACT is exactly four pipe-delimited fields (email, phone, location, LinkedIn), each blank-but-present rather than dropped, so a missing field can never shift the fields after it. Every service that reads or writes the inventory (`buildService`, `tailorService`, `docxService`) uses this same order; none may reinterpret it locally.
+- Facts lock into the registry when the user approves a section.
 
 The user is responsible for providing context Iris cannot invent, approving each section before it locks, and confirming that every number, date, and claim is accurate and defensible.
 
@@ -203,14 +192,13 @@ Patterns detected:
 - Run-on sentences. One idea per sentence.
 - Unexplained internal or proprietary program names. Every such name is explained in plain English on first use in each document, and tied back explicitly if used again. Test: the document makes sense to a reader with zero context on the user's work.
 - Numbers appear as numerals, never spelled out.
-- **Banned vocabulary, two tiers.** Every entry is a known LLM writing tell. They differ in how they present.
-  - *Always flagged:* seamlessly, leveraged, utilized, spearheaded, synergized, through-line, established clear expectations, intellectual foundation, what I bring to this role. Any occurrence.
-  - *Frequency-gated:* effectively, directly. Ordinary English in isolation, a tell when repeated within a document or used where more direct language would serve. Flagged above a per-document occurrence threshold, or on any use judged imprecise (T-3.3, T-3.3a).
-
-  The threshold is code config, not spec content, per amendment protocol rule 5. The distinction matters because a hard ban on ordinary English produces a false positive on every draft, which trains users to ignore the check.
+- Banned vocabulary, default list: seamlessly, effectively, directly, leveraged, utilized, spearheaded, synergized, established clear expectations, through-line, intellectual foundation, what I bring to this role, load-bearing.
 - User-defined banned terms: personal or employer-specific terms, internal codenames, retired jargon. Checked alongside the default list. The default list is spec content; user additions are user data.
-- Em dashes. No exceptions (T-3.1).
-- Hidden text of any kind. Hard constraint, never a configurable preference (T-3.2). See open item below on the gap between this rule's scope and its check's scope.
+- **Tense consistency.** Completed roles use past tense throughout. The current role uses present tense throughout. Tense must not drift within a role block. HYBRID: a tool flags tense changes within a role block; judgment confirms whether the change is intentional.
+- **Repeated sentence openers.** A run of three or more consecutive sentences beginning with the same word or structural pattern (e.g., three consecutive bullets all opening with "Led") is flagged. HYBRID: tool nominates runs; judgment confirms whether the repetition is intentional emphasis or structural laziness.
+- **Vacuous sentences.** A sentence that is grammatically correct but makes no verifiable claim — it could be deleted without any loss of content. JUDGMENT check only; no tool can reliably detect this. The Team Lead pass is explicitly responsible for catching it. Examples: "This work demonstrated strong leadership skills." / "I brought a collaborative mindset to every project."
+- Em dashes. No exceptions.
+- Hidden text of any kind. Hard constraint, never a configurable preference.
 
 **Never invent a metric.** Where a claim wants a number the registry does not hold, Iris inserts a bracketed marker (`[ADD METRIC: ...]`) rather than supplying a figure. This applies to revision and repair operations as well as first drafts. No document ships containing an unresolved marker.
 
@@ -224,8 +212,6 @@ Patterns detected:
 
 **Six-second scannability.** Bold leads tell the career story without body text. The most impressive work appears above the fold. Role titles and dates are immediately visible.
 
-**Filenames.** Output naming is specified in section 8 and enforced at generation (T-4.13).
-
 **Length.** Tailored resumes target one to two pages, per resume best-practice research. The target is a floor, not a ceiling: available space is filled before content is trimmed, and relevant unused registry content is pulled in even where that pushes past two pages. Older or less relevant roles stay title-and-dates only rather than being padded to fill space. The master resume has no length ceiling; comprehensiveness is its purpose, and it is not a document the user sends.
 
 ### Phase 5: Fit Check
@@ -236,7 +222,7 @@ Runs on every job description submission, before any tailored output is generate
 - Surfaces strong, well-supported matches.
 - Names real gaps plainly. Gaps are not reframed or minimized. A gap stated inaccurately is worse than a gap omitted.
 - Where compensation is undisclosed, runs a market search and presents an estimated range clearly labeled as an estimate. Where no reliable result is available, states that plainly rather than presenting a fabricated or low-confidence range.
-- Blocked if the registry is empty (T-5.2).
+- Blocked if the registry is empty.
 
 The fit check is informational. It never blocks the user from proceeding on a low-fit role. The user decides whether to proceed and how directly to name remaining gaps.
 
@@ -252,17 +238,14 @@ The fit check is informational. It never blocks the user from proceeding on a lo
 - **JD phrase flagging.** Notable JD phrases with no verbatim match anywhere in the tailored resume are surfaced as an informational list. Iris never auto-inserts them. The user decides per phrase whether an exact-wording swap fits honestly within the alignment already produced.
 - Carries Fit Check gaps forward to the cover letter.
 
-**PROJECTS inclusion.** A populated PROJECTS section is included in a tailored resume only where it strengthens the application for that posting, or where the user explicitly asks for it. Unlike every other optional section, presence in the inventory does not imply presence in output (T-6.16).
-
-**No invention.** Every span of tailored content carries a registry fact id, per 5.8. Spans with no id, or with ids absent from the registry, fail the gate (T-6.12). Iris adds nothing that is not in the registry. Tailoring is reordering and reframing. Every detail added during tailoring is a new claim requiring its own source check: an added qualifier, a modality breakdown, a geographic scope, an audience descriptor, or a methodology label carried over from a different role.
+**No invention.** Iris adds nothing that is not in the registry. Tailoring is reordering and reframing. Every detail added during tailoring is a new claim requiring its own source check: an added qualifier, a modality breakdown, a geographic scope, an audience descriptor, or a methodology label carried over from a different role.
 
 ### Phase 7: Cover Letter
 
 Generated as a pair with every tailored resume, from the same JD and the same Fit Check findings.
 
-- **Structure.** Four paragraphs: opening hook with role reference; core capability argument built on the two to three strongest matched requirements with quantified evidence; company alignment, which also carries honest treatment of any real gap from the Fit Check; closing restating value and ending on the locked line. 250 to 400 words, single page. These bounds are a research-grounded default, not a hard ceiling. Exceeding them requires the user's authorization for that specific letter, with a stated rationale, recorded in package state (T-7.13).
-- **Closing line.** Default wording, user-adjustable: "I look forward to exploring whether this is the right fit for both of us." Iris supplies it on every letter. The user may edit or replace it. Any replacement is user-authored text and follows the rule below (T-7.3).
-- **User-authored text.** Where the user writes or edits text directly, Iris still runs its language and formatting checks against it and surfaces findings, but those findings are advisory and do not gate delivery. Iris never silently modifies text the user wrote. This applies to the closing line and to any other passage the user supplies or overrides (T-7.14).
+- **Structure.** Four paragraphs: opening hook with role reference; core capability argument built on the two to three strongest matched requirements with quantified evidence; company alignment, which also carries honest treatment of any real gap from the Fit Check; closing restating value and ending on the locked line. 250 to 400 words, single page.
+- **Closing line.** Locked exact wording, not user-configurable: "I look forward to exploring whether this is the right fit for both of us."
 - **Salutation.** Named contact, then department, then company recruiting team, then "Dear Hiring Manager". Never "To Whom It May Concern".
 - **Gap language.** Real gaps from the Fit Check are named directly and specifically, never omitted or reframed as strengths. The user may adjust how directly a gap is named. Silent removal of a flagged finding is structurally prevented; removal requires acknowledgment.
 - **No manufactured gaps.** A gap the JD's own wording does not treat as a gap is not conceded. Conceding one undermines the application without cause.
@@ -274,18 +257,18 @@ Generated as a pair with every tailored resume, from the same JD and the same Fi
 
 Three tiers run on the completed pair before delivery. Every check expressible in code is run in code. Every check produces a visible pass or fail result.
 
-**Critical pass.** Claims unsupported by the registry. Any value not exactly matching its registry entry. Formatting failures. Missing sections flagged output-required for this artifact type (T-8.5). Two specific checks:
+**Critical pass.** Claims unsupported by the registry. Any value not exactly matching its registry entry. Formatting failures. Missing required sections. Two specific checks:
 
 - Every explanatory or clarifying clause added during tailoring is checked against the registry with the same rigor as an original claim. Added text is a common place for unsupported claims to enter unnoticed.
 - Every bullet label is checked against its own body.
 
-**Pedantic pass.** Entirely programmatic. Full slop scan. Per-bullet word limit, default 60. A bullet over the limit is flagged and may ship only with the user's authorization for that specific bullet, with a stated rationale, recorded in package state. This is not a configurable setting: a config value silently raises the ceiling for every future bullet, while an authorization is one decision about one bullet and leaves a record (T-8.7, T-8.21). Same-figure internal consistency: every instance of a figure within a document must agree. Date and figure cross-check against the master. Co-occurrence presence check.
+**Pedantic pass.** Entirely programmatic. Full slop scan. Per-bullet word limit, fixed at 60, not user-configurable. Same-figure internal consistency: every instance of a figure within a document must agree. Date and figure cross-check against the master. Co-occurrence presence check.
 
 **Team Lead pass.** Reads the document as an experienced hiring reviewer applying real judgment, not a checklist run on autopilot. Assesses voice consistency, argument strength, and whether the document would generate a call. Deterministic components run as tools and hand their results to the reviewer: em-dash sweep, straight-quote and illegal-character scan, AI-writing-detection pass, full ATS scan, the plain-text extraction check, and the adversarial space-fill measurement. The extraction check round-trips the generated docx back to text and verifies it against scrambled characters, merged sections, and dropped fields. A failure is Critical severity, not a Team Lead advisory.
 
 **Adversarial space-fill.** Before finalizing, remaining page space and unused relevant registry content are enumerated exhaustively, every bullet across every role, not sampled. The reviewer decides what to pull in.
 
-**Severity handling.** Critical findings must be resolved before either document is delivered (T-8.18). High findings are surfaced with recommended fixes. Medium and Low are advisory. Findings are terse: issue and fix. Unsupported claims are cut rather than softened. If the same Critical finding recurs after a fix attempt, Iris surfaces it to the user rather than attempting the same automated fix again.
+**Severity handling.** Critical findings must be resolved before either document is delivered. High findings are surfaced with recommended fixes. Medium and Low are advisory. Findings are terse: issue and fix. Unsupported claims are cut rather than softened. If the same Critical finding recurs after a fix attempt, Iris surfaces it to the user rather than attempting the same automated fix again.
 
 ## 7. Data, Identity, and Privacy
 
@@ -302,8 +285,6 @@ Three tiers run on the completed pair before delivery. Every check expressible i
 **7.6** Multiple concurrent users are assumed from V1. User data enters model context only through a tool call scoped by authenticated identity. Two users' data are never placed in one context with an instruction to keep them apart.
 
 **7.7** Output documents carry no Lore branding and no Iris state. They are the user's documents, ready to submit without modification.
-
-**7.8** The profile records a fingerprint of the master it was built from. On import, a mismatch against the uploaded master warns the user, is recorded in the session log, and does not block. Warning rather than blocking is deliberate: a recorded divergence is interpretable when something later goes wrong, while a hard block teaches users to work around the check (T-2.19).
 
 ## 8. Output
 
@@ -328,24 +309,17 @@ The backbone enforcement rules, stated unambiguously rather than inferred from p
 | Unwanted-behavior | If a document cannot be extracted with sufficient confidence, then Iris shall flag the extraction and route the user to manual review before Phase 1. |
 | Unwanted-behavior | If the market compensation search returns no reliable result, then Iris shall state that compensation could not be estimated rather than presenting a fabricated range. |
 | Ubiquitous | Iris shall never insert hidden, invisible, or white-on-white text into any output, for any reason. |
-| Ubiquitous | Iris shall never use an em dash in any generated output. Generated output means any resume, cover letter, or user-facing text Iris produces. This spec is held to the same standard by convention, not by this requirement. |
-| State-driven | While a bullet exceeds 60 words without a recorded authorization, Iris shall flag it in the Pedantic pass. |
+| Ubiquitous | Iris shall never use an em dash in any generated output. |
+| State-driven | While a bullet exceeds 60 words, Iris shall flag it in the Pedantic pass. |
 | Event-driven | When the user approves a Master Resume section, Iris shall lock all facts in that section into the registry. |
 | Event-driven | When Tailoring completes, Iris shall flag any notable JD phrase with no verbatim match as a list surfaced to the user. |
 | Ubiquitous | Iris shall format all Experience and Projects date ranges as Mon YYYY - Mon YYYY, never year-only or the word Present. |
-| State-driven | While a cover letter falls outside 250 to 400 words without a recorded authorization, Iris shall flag it in the Pedantic pass. |
-| State-driven | While a Phase 1 Critical finding is without disposition, Iris shall not advance to Phase 2. |
-| Unwanted-behavior | If the imported profile's master fingerprint does not match the uploaded master, then Iris shall warn the user, record the mismatch, and proceed. |
-| State-driven | While a section flagged inventory-required is empty, Iris shall not complete Phase 2. |
+| State-driven | While a cover letter falls outside its word count bounds, Iris shall flag it in the Pedantic pass. |
 | Unwanted-behavior | If the plain-text extraction check reveals scrambled characters, merged sections, or dropped fields, then Iris shall flag it as a Critical finding. |
-| Ubiquitous | Iris shall attach a Locked Facts Registry fact id to every span of generated resume or cover letter content. |
-| Unwanted-behavior | If a tool call would return data not scoped to the authenticated user, then Iris shall fail the call rather than return the data. |
 
-All nineteen are buildable. Fourteen carried from v0.9; provenance and cross-user isolation added 2026-07-24 after adversarial review found both load-bearing and unrequired; Phase 1 Critical disposition and profile fingerprint mismatch added 2026-07-24 by owner decision. Length limits are defaults subject to per-instance authorization, not configured values.
+All fourteen are buildable as of 2026-07-23. The per-bullet word limit was stated as a configured value through v0.9; it was fixed at 60 by decision of 2026-07-23.
 
 ## 10. Scope Boundary
-
-**V1 requires work history.** EXPERIENCE is inventory-required, so a user with no work history is blocked by a Critical rather than served poorly. This is deliberate and consistent with new-graduate onboarding being out of scope. It is stated here rather than left to emerge from a validator flag.
 
 **V1.** Three entry paths. Master build with registry and bold-lead enforcement. Always-on slop and formatting checks including custom term lists. Fit Check with compensation estimate. JD-paste tailoring with semantic alignment. Paired cover letter and Letter of Interest. Three-tier programmatically verified final review. Docx output. Authentication. Portable Iris Profile.
 
@@ -391,7 +365,7 @@ The prior spec line is absorbed into Part I.
 | v0.6 | Salutation fallback hierarchy | Phase 7 |
 | v0.6 | Weak passive-hedge check | Phase 3 |
 | v0.6 | Font family and size locked | Phase 4 |
-| v0.6 | Plain-text extraction check | Phase 8 (Team Lead pass) |
+| v0.6 | Plain-text extraction check | Phase 4 |
 | v0.7 | SUMMARY as three to five bullets | Phase 2 |
 | v0.8 | Adversarial space-fill; length is a floor | Phase 4, Phase 8 |
 | v0.9 | Run-on and jargon checks into Team Lead pass | Phase 3, Phase 8 |
@@ -435,58 +409,19 @@ v0.9 located after this spec was drafted. Corrections applied: fourteen EARS req
 
 Four decisions of 2026-07-23 supersede v0.9 as later and deliberate: tailored filenames drop the date, the per-bullet word limit is fixed rather than configured, careerInventory sections take required/optional flags rather than a fixed nine, and gap acknowledgment is a gate. All four of v0.9's open questions are now closed.
 
-## 2026-07-24: Adversarial red-team pass waived, then run internally
+## 2026-07-26: Communication standard, writing rules additions
 
-Owner authorization to skip the Cassandra pass, 2026-07-24. The deployment cost was not worth blocking build work. The four review priorities drafted for it (reconciliation gaps against v0.9, cross-file drift between spec and tool list, rules whose enforcement is narrower than they sound, and rules with no enforcement path) stand as the scope if an independent pass happens later.
+**Communication standard (Principle 10, Phase 0 standard).** The spec described what each phase does but not what the model should say to the user about it. The model was narrating extraction details, role lists, structural inventory tables, and harness terminology that users neither need nor understand. Two additions: a new Design Principle 10 (Say less — no internal terminology in user-facing responses), and a Phase 0 communication standard specifying the exact post-extraction response form.
 
-A non-independent pass was then run in the same session by the model that wrote both documents. Its blind spots are that model's blind spots, and it is not a substitute for independent review.
+**Banned vocabulary addition.** "load-bearing" added to the default banned list.
 
-## 2026-07-24: Review findings resolved
-
-Fixed: tool-list IDs now carry a `T-` prefix, ending a collision where spec section 5.9 and tool item 5.9 named unrelated rules; the spec now cites those IDs, which it previously claimed to do and did not; provenance became a requirement in Phase 2, Phase 6, and EARS rather than a data-model note with no obligation attached; rule 4.4 names Phase 8 as its exception rather than contradicting it; section 5 is declared authoritative over tool-list section 16; enforcement counts were removed from the spec to stop them drifting; the amendment protocol names its subject and excludes Iris itself; cross-user isolation gained an EARS requirement; the stale Phase 4 row for the extraction check was corrected; filename cross-reference and em-dash scope defects closed.
-
-EARS requirements now number sixteen. Four findings need owner input and are listed below rather than resolved.
-
-## 2026-07-24: Four review findings resolved by owner
-
-**Hidden text.** The ban stays absolute and gains a safety rationale: concealed text is a prompt-injection vector into any downstream parser, not merely a dishonest optimization. Enforcement inverts from a blocklist of known techniques to positive visibility verification, since a blocklist cannot back an absolute ban.
-
-**Phase 1 Criticals.** Disposition required before Phase 2. Fixed or acknowledged-with-reason both satisfy it; acknowledgment is distinct from dismissal and the finding resurfaces at Final Review. The severity rubric is held tight so this does not become a spurious block.
-
-**Profile mismatch.** Warn, record, proceed. A recorded divergence is interpretable later; a hard block teaches users to route around the check.
-
-**Length limits.** Research-grounded defaults with per-instance authorization. This supersedes the 2026-07-23 decision that the 60-word bullet limit is fixed and not user-configurable. That decision's reasoning is preserved rather than discarded: an authorization is not a configuration, because it does not raise the ceiling for anything beyond the one bullet or letter it covers, and it leaves a record where a config change leaves none.
-
-## 2026-07-24: Closing line unlocked
-
-The cover letter closing line becomes a default rather than a locked string. The existing wording is retained as that default and the user may adjust it. Locking it was decided in v0.5 when Iris was a personal tool and was never re-examined against product scope; no rationale for enforcing one house closing line across every user survives that change.
-
-Consequence: this introduces user-authored text inside a generated document, a category the spec did not previously have. A rule was added to Phase 7. Such text is checked and flagged but never gated on and never silently altered. User-authored spans carry no registry fact id and are exempt from the provenance gate, which would otherwise fail them for having no antecedent.
-
-## 2026-07-24: Required section set settled
-
-Two flags rather than one, since a single flag misstates four of the nine rows. Dispositions per the table in Phase 2.
-
-EXPERIENCE and SKILLS are both required, superseding an earlier proposal of NAME, CONTACT, EXPERIENCE that omitted SKILLS. SKILLS carries ATS keyword survival and cannot be optional.
-
-PROJECTS is defined by scope of employment, which resolves the EXPERIENCE-versus-PROJECTS classification ambiguity that was previously left to judgment. Its output inclusion is conditional rather than flag-driven: a relevance call plus a user override, unlike every other section.
-
-CONTACT gains field-level flags. Email, phone, and location required; LinkedIn optional. Phone is required on best-practice grounds.
-
-## 2026-07-24: Red-team pass closed
-
-The pass was performed using the Cassandra review method rather than the deployed app, which the owner intends to rebuild. Treated as satisfied: fifteen findings, eleven fixed directly and four resolved by owner decision.
-
-One caveat recorded rather than argued: the reviewer wrote both documents, so the pass was not independent and its blind spots are that author's blind spots.
-
-## 2026-07-24: Banned vocabulary retained, check refined
-
-All eleven inherited entries stay. They are known LLM writing tells. What changes is enforcement: the list splits into always-flagged terms and frequency-gated terms, the latter being ordinary English that reads as a tell only when repeated or misapplied. Frequency detection is deterministic; assessment of misuse is judgment and is a separate item.
-
-## 2026-07-24: Service names closed as moot
-
-The six service names were a blocking gap only while the plan was to map the spec onto the existing app. Under the harness architecture they are legacy. The tool list captures the service functionality in full, organized by phase rather than by service, so no spec content depends on the old boundaries.
+**Writing rules additions to Phase 3.** Three new patterns added: tense consistency (past for completed roles, present for current role, HYBRID), repeated sentence openers (run of 3+ same opener, HYBRID), and vacuous sentences (makes no verifiable claim, JUDGMENT — named so the Team Lead pass knows to look for it explicitly).
 
 ## Open items
 
-- **Lore palette tokens**, locked as of 2026-07-03, should be read before any Iris UI work begins. Non-blocking: brand consistency matters but gates nothing. Carried as a standing reminder rather than an unresolved decision.
+- **Two of six service names.** v0.9 names `buildService`, `tailorService`, and `docxService`; the handoff adds `reviewService`. Two remain unnamed, as does the mapping of nine phases onto six services.
+- **Lore palette tokens**, locked as of 2026-07-03, must be read before any Iris UI work begins.
+- **Required section set.** Proposed: NAME, CONTACT, EXPERIENCE. Not yet confirmed.
+- **Locked closing line under product scope.** Locking exact wording was decided when Iris was a personal tool. A single house closing line across all users is defensible but was never decided as a product rule.
+- **Default banned vocabulary list** is inherited from v0.1 and has not been reviewed since. Two entries ("effectively", "directly") are common enough in ordinary prose to be worth revisiting.
+- **Cassandra-style adversarial red-team pass** on this document, before build work starts.

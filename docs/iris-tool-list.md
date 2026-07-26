@@ -118,6 +118,8 @@ Everything here runs on every draft and revision. Anything JUDGMENT in this sect
 | T-3.14 | Self-annotation | JUDGMENT | A sentence explaining why a bullet is impressive has no surface marker. Pure reading. |
 | T-3.15 | Custom term leak blocker | GATE | Same engine as T-3.4, escalated to a gate. A user's employer-confidential names must never reach output. Exact match against the per-user list, with a per-user allowlist for public exceptions. Never judgment. |
 | T-3.16 | Plain-English explainer on first use (v0.9) | HYBRID | Registry members are tool-detectable. Whether a non-registry proper noun needs an explainer is judgment. Failure pattern (a) applies: the explainer itself can introduce an unsupported claim, so its output routes back through T-8.3. |
+| T-3.17 | Tense consistency | HYBRID | Tool nominates sentences with wrong-tense verbs for the role type (present in completed role, past in current role); judgment confirms. |
+| T-3.18 | Repeated sentence opener | HYBRID | Tool nominates runs of 3+ consecutive sentences with the same opening word; judgment confirms whether intentional. |
 
 ## 6. Phase 4: Formatting
 
