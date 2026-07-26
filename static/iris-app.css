@@ -400,6 +400,158 @@ body {
   cursor: not-allowed;
 }
 
+/* ── Help button and pipeline reference modal ── */
+
+.help-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--lore-border);
+  background: transparent;
+  color: var(--lore-text-secondary);
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-sm);
+  font-weight: var(--lore-weight-semibold);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--lore-transition);
+  flex-shrink: 0;
+}
+
+.help-btn:hover {
+  border-color: var(--lore-amber);
+  color: var(--lore-amber-light);
+}
+
+.help-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.help-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.help-modal-panel {
+  position: relative;
+  background: var(--lore-surface-card);
+  border: 1px solid var(--lore-border);
+  border-radius: var(--lore-radius-xl);
+  max-width: 680px;
+  width: calc(100% - var(--lore-space-8));
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: var(--lore-space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--lore-space-4);
+}
+
+.help-modal-close {
+  position: absolute;
+  top: var(--lore-space-4);
+  right: var(--lore-space-4);
+  background: none;
+  border: none;
+  color: var(--lore-text-secondary);
+  font-size: var(--lore-text-xl);
+  cursor: pointer;
+  line-height: 1;
+  padding: var(--lore-space-1) var(--lore-space-2);
+}
+
+.help-modal-close:hover { color: var(--lore-white); }
+
+.help-modal-title {
+  font-size: var(--lore-text-2xl);
+  color: var(--lore-amber-light);
+  padding-right: var(--lore-space-8);
+}
+
+.help-modal-intro {
+  color: var(--lore-text-secondary);
+  font-size: var(--lore-text-sm);
+  line-height: var(--lore-leading-normal);
+}
+
+.pipeline-steps {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lore-space-3);
+}
+
+.pipeline-step {
+  background: var(--lore-surface-base);
+  border: 1px solid var(--lore-border);
+  border-radius: var(--lore-radius-md);
+  padding: var(--lore-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--lore-space-2);
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: var(--lore-space-3);
+}
+
+.step-number {
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-xs);
+  color: var(--lore-amber-light);
+  background: var(--lore-amber-ghost);
+  border: 1px solid var(--lore-amber-dim);
+  border-radius: var(--lore-radius-sm);
+  padding: 2px var(--lore-space-2);
+  flex-shrink: 0;
+}
+
+.step-name {
+  font-weight: var(--lore-weight-semibold);
+  font-size: var(--lore-text-sm);
+  color: var(--lore-text-primary);
+}
+
+.step-you,
+.step-iris {
+  font-size: var(--lore-text-sm);
+  color: var(--lore-text-secondary);
+  line-height: var(--lore-leading-normal);
+}
+
+.step-output {
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-xs);
+  color: var(--lore-text-muted);
+  padding-top: var(--lore-space-1);
+  border-top: 1px solid var(--lore-border);
+}
+
+.help-modal-profile-note {
+  background: var(--lore-amber-ghost);
+  border: 1px solid var(--lore-amber-dim);
+  border-radius: var(--lore-radius-md);
+  padding: var(--lore-space-4);
+  font-size: var(--lore-text-sm);
+  color: var(--lore-text-secondary);
+  line-height: var(--lore-leading-normal);
+}
+
+.help-modal-profile-note strong {
+  color: var(--lore-amber-light);
+}
+
 /* Download cards: visually distinct from chat bubbles, reads as
    "something you act on" rather than a message. */
 .download-card {

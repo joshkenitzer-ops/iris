@@ -149,6 +149,22 @@ async function initApp() {
   wireComposer();
   document.getElementById("new-session-btn").addEventListener("click", startNewSession);
   document.getElementById("start-session-btn").addEventListener("click", startFirstSession);
+
+  // Help modal wiring
+  const helpBtn = document.getElementById("help-btn");
+  const helpModal = document.getElementById("help-modal");
+  const helpClose = document.getElementById("help-modal-close");
+  const backdrop = helpModal.querySelector(".help-modal-backdrop");
+
+  function openHelp() { helpModal.style.display = "flex"; }
+  function closeHelp() { helpModal.style.display = "none"; }
+
+  helpBtn.addEventListener("click", openHelp);
+  helpClose.addEventListener("click", closeHelp);
+  backdrop.addEventListener("click", closeHelp);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && helpModal.style.display === "flex") closeHelp();
+  });
   // Don't create a session eagerly — wait for the user to click
   // "Start a session." The composer stays hidden until that click.
 }
