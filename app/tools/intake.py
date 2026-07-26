@@ -543,47 +543,52 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
 def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolResult:
     """Harness-side execution of the batch.
 
-    This function is the handler called when the model invokes the
-    run_batch_checks tool. It delegates to registry.dispatch_by_id for
-    each tool_id rather than routing through the HTTP endpoint, since
-    we are already inside a dispatch call with the authenticated session
-    in hand."""
+    Returns ONLY passed/findings per tool — never the data field.
+    The data payloads from individual tools (candidate lists, extracted
+    text, confidence scores) can be tens of thousands of tokens for a
+    large resume. Sending them all back in one tool result caused the
+    audit to stall for 10+ minutes because the model was processing a
+    massive consolidated payload. The model only needs to know whether
+    each check passed and what the findings are — data is for
+    harness-internal use only."""
     from app.enforcement import EnforcementKind as EK
 
-    results = []
+    per_tool = []
     all_passed = True
+    all_findings = []
+
     for tid in tool_ids:
         try:
             spec = registry.get(tid)
             if spec.kind not in (EK.TOOL, EK.GATE):
-                results.append({
-                    "tool_id": tid,
-                    "passed": False,
-                    "findings": [{"severity": "High", "issue": f"{tid} is {spec.kind.name}, not TOOL or GATE — call it separately.", "fix": "Remove from batch."}],
-                    "data": {},
-                })
+                finding = {
+                    "severity": "High",
+                    "issue": f"{tid} is {spec.kind.name}, not TOOL or GATE — call it separately.",
+                    "fix": "Remove from batch.",
+                }
+                per_tool.append({"tool_id": tid, "passed": False})
+                all_findings.append(finding)
                 all_passed = False
                 continue
             result = registry.dispatch_by_id(tid, inputs, session=session)
-            results.append({
-                "tool_id": tid,
-                "passed": result.passed,
-                "findings": result.findings,
-                "data": result.data,
-            })
+            per_tool.append({"tool_id": tid, "passed": result.passed})
+            all_findings.extend(result.findings)
             if not result.passed:
                 all_passed = False
         except Exception as exc:  # noqa: BLE001
-            results.append({
-                "tool_id": tid,
-                "passed": False,
-                "findings": [{"severity": "Critical", "issue": f"Tool {tid} raised: {exc}", "fix": "Check server logs."}],
-                "data": {},
-            })
+            finding = {
+                "severity": "Critical",
+                "issue": f"Tool {tid} raised: {exc}",
+                "fix": "Check server logs.",
+            }
+            per_tool.append({"tool_id": tid, "passed": False})
+            all_findings.append(finding)
             all_passed = False
 
     return ToolResult(
         passed=all_passed,
-        findings=[f for r in results for f in r.get("findings", [])],
-        data={"results": results},
+        findings=all_findings,
+        # Minimal data: just pass/fail per tool so the model can
+        # reference which checks ran, without the verbose data payloads.
+        data={"summary": per_tool},
     )
