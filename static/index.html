@@ -27,14 +27,14 @@
 <script
   defer
   crossorigin="anonymous"
-  src="https://stable-robin-5.clerk.accounts.dev/npm/@clerk/ui@1/dist/ui.browser.js"
+  src="https://YOUR_FRONTEND_API_URL/npm/@clerk/ui@1/dist/ui.browser.js"
   type="text/javascript"
 ></script>
 <script
   defer
   crossorigin="anonymous"
-  data-clerk-publishable-key="pk_test_c3RhYmxlLXJvYmluLTUuY2xlcmsuYWNjb3VudHMuZGV2JA"
-  src="https://stable-robin-5.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
+  data-clerk-publishable-key="YOUR_PUBLISHABLE_KEY"
+  src="https://YOUR_FRONTEND_API_URL/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
   type="text/javascript"
 ></script>
 </head>
@@ -82,7 +82,7 @@
         id="message-input"
         class="lore-input composer-input"
         placeholder="Paste a job description, ask a question, or attach a resume to get started"
-        rows="1"
+        rows="5"
       ></textarea>
       <button id="send-btn" class="lore-btn-primary composer-send">Send</button>
     </div>

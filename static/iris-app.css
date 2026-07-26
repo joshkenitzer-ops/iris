@@ -6,12 +6,23 @@
  * lore-tokens.css or iris-theme.css. If a color needs to change, it
  * changes there, not here.
  *
+ * --iris-work-width is the one measurement here that isn't taken
+ * straight from the tokens. --lore-content-width (720px) is a reading
+ * measure, tuned for prose line length; this is a working surface
+ * people paste whole job descriptions into, so the message column and
+ * composer share a wider column. Kept as a named variable rather than
+ * a magic number repeated in three rules.
+ *
  * A few choices made specifically to avoid the generic-AI-chat look:
  * message bubbles use --lore-radius-md (6px), not a pill shape;
  * amber is reserved for interactive elements (buttons, focus states,
  * the thinking indicator) rather than decorating every message; there
  * is no gradient anywhere in this file.
  */
+
+:root {
+  --iris-work-width: 900px;
+}
 
 html, body {
   height: 100%;
@@ -105,7 +116,7 @@ body {
 }
 
 .message-list {
-  max-width: var(--lore-content-width);
+  max-width: var(--iris-work-width);
   width: 100%;
   margin: 0 auto;
   display: flex;
@@ -156,7 +167,7 @@ body {
    not "broken", during that wait. */
 .thinking-indicator {
   align-self: flex-start;
-  max-width: var(--lore-content-width);
+  max-width: var(--iris-work-width);
   width: 100%;
   margin: 0 auto;
   display: flex;
@@ -193,7 +204,7 @@ body {
 }
 
 .attachment-chip {
-  max-width: var(--lore-content-width);
+  max-width: var(--iris-work-width);
   margin: 0 auto var(--lore-space-2);
   display: flex;
   align-items: center;
@@ -223,7 +234,7 @@ body {
 }
 
 .composer-row {
-  max-width: var(--lore-content-width);
+  max-width: var(--iris-work-width);
   margin: 0 auto;
   display: flex;
   align-items: flex-end;
@@ -245,8 +256,15 @@ body {
 
 .composer-input {
   flex: 1;
-  resize: none;
-  max-height: 200px;
+  resize: vertical;
+  /* People paste entire job descriptions in here, so a single-line
+     box was the wrong default: it needs to read as a real writing
+     space on arrival, not a search bar. Starts at roughly 5 lines,
+     grows with content up to max-height, and stays manually
+     resizable beyond that. */
+  min-height: 120px;
+  max-height: 45vh;
+  line-height: var(--lore-leading-normal);
 }
 
 .composer-send {
