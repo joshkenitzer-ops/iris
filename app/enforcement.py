@@ -147,6 +147,27 @@ class ToolRegistry:
             return spec.handler(session=session, **tool_input)
         return spec.handler(**tool_input)
 
+    def dispatch_by_id(self, tool_id: str, tool_input: Dict[str, Any], session: Any = None) -> ToolResult:
+        """Run a tool by its T-x.y id rather than its function name.
+
+        Used by the /run-checks batch endpoint, which receives tool IDs
+        from the model rather than names. Identical session-injection
+        semantics to dispatch()."""
+        spec = self.get(tool_id)
+        # Filter tool_input to only the keys the tool actually accepts,
+        # so a batch call with a superset of inputs (e.g. both `text`
+        # and `roles`) does not break tools that only take one of them.
+        import inspect
+        accepted = set(inspect.signature(spec.handler).parameters.keys()) - {"session"}
+        filtered = {k: v for k, v in tool_input.items() if k in accepted}
+        if spec.needs_session:
+            if session is None:
+                raise ValueError(
+                    f"Tool {tool_id} requires session context but none was supplied."
+                )
+            return spec.handler(session=session, **filtered)
+        return spec.handler(**filtered)
+
 
 registry = ToolRegistry()
 

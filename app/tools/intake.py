@@ -22,7 +22,7 @@ import io
 from typing import List
 
 from app.config import EXTRACTION_CONFIDENCE
-from app.enforcement import EnforcementKind, ToolResult, tool
+from app.enforcement import EnforcementKind, ToolResult, registry, tool
 from app.session import Session
 from app.untrusted_text import wrap_untrusted
 
@@ -494,3 +494,96 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
         for section in missing
     ]
     return ToolResult(passed=len(missing) == 0, findings=findings, data={"missing_sections": missing})
+
+
+# ---------------------------------------------------------------------------
+# T-9.15: run multiple TOOL checks in a single harness call
+# ---------------------------------------------------------------------------
+
+
+@tool(
+    id="T-9.15",
+    name="run_batch_checks",
+    description=(
+        "Runs multiple TOOL-kind checks in a single call to the harness, "
+        "eliminating the per-check model round trip that makes the audit "
+        "slow. Pass a list of tool IDs (T-3.1, T-3.3, T-4.1, etc.) and "
+        "the shared input dict; the harness dispatches all of them and "
+        "returns every result at once. Use this instead of calling each "
+        "check individually. Only TOOL-kind items are accepted; HYBRID "
+        "and JUDGMENT items are not — their results require model "
+        "adjudication and must remain separate calls. "
+        "For Phase 1 (Audit), call this once with: T-3.1, T-3.3, T-3.4, "
+        "T-3.5, T-3.6, T-3.7, T-3.8 and input={\"text\": <resume_text>}. "
+        "For Phase 4 (Formatting), call once with: T-4.1, T-4.2, T-4.3, "
+        "T-4.4, T-4.5, T-4.6, T-4.7, T-4.9, T-4.14 and the document text. "
+        "For Phase 8 (Final Review), call once with: T-8.5, T-8.6, T-8.7, "
+        "T-8.12, T-8.13, T-8.14, T-8.15 and the document pair. "
+        "The endpoint is POST /sessions/{session_id}/run-checks. "
+        "The harness routes this for you when you call this tool."
+    ),
+    kind=EnforcementKind.TOOL,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "tool_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of T-x.y tool IDs to run in one batch.",
+            },
+            "inputs": {
+                "type": "object",
+                "description": "Shared input dict passed to every tool in the batch.",
+            },
+        },
+        "required": ["tool_ids", "inputs"],
+    },
+    needs_session=True,
+)
+def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolResult:
+    """Harness-side execution of the batch.
+
+    This function is the handler called when the model invokes the
+    run_batch_checks tool. It delegates to registry.dispatch_by_id for
+    each tool_id rather than routing through the HTTP endpoint, since
+    we are already inside a dispatch call with the authenticated session
+    in hand."""
+    from app.enforcement import EnforcementKind as EK
+
+    results = []
+    all_passed = True
+    for tid in tool_ids:
+        try:
+            spec = registry.get(tid)
+            if spec.kind not in (EK.TOOL, EK.GATE):
+                results.append({
+                    "tool_id": tid,
+                    "passed": False,
+                    "findings": [{"severity": "High", "issue": f"{tid} is {spec.kind.name}, not TOOL or GATE — call it separately.", "fix": "Remove from batch."}],
+                    "data": {},
+                })
+                all_passed = False
+                continue
+            result = registry.dispatch_by_id(tid, inputs, session=session)
+            results.append({
+                "tool_id": tid,
+                "passed": result.passed,
+                "findings": result.findings,
+                "data": result.data,
+            })
+            if not result.passed:
+                all_passed = False
+        except Exception as exc:  # noqa: BLE001
+            results.append({
+                "tool_id": tid,
+                "passed": False,
+                "findings": [{"severity": "Critical", "issue": f"Tool {tid} raised: {exc}", "fix": "Check server logs."}],
+                "data": {},
+            })
+            all_passed = False
+
+    return ToolResult(
+        passed=all_passed,
+        findings=[f for r in results for f in r.get("findings", [])],
+        data={"results": results},
+    )

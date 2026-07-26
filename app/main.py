@@ -549,6 +549,87 @@ class ChatRequest(BaseModel):
     tool_ids: Optional[List[str]] = None
 
 
+class RunChecksRequest(BaseModel):
+    """Batch check execution request.
+
+    The model calls this instead of invoking each check as a separate
+    tool call. Every tool in `tool_ids` must be TOOL-kind (deterministic
+    code); HYBRID and JUDGMENT tools are not eligible since they need
+    the model's own reasoning to adjudicate. The harness dispatches all
+    of them with the shared `inputs` dict and returns every result in
+    one response.
+
+    This is the fix for audit latency: 15 sequential model round trips
+    (one per slop check) collapsed to a single HTTP call. The model
+    receives all findings at once and adjudicates the HYBRID nominees
+    in one subsequent turn rather than waiting for each check to come
+    back before deciding to call the next one.
+    """
+
+    tool_ids: List[str]
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/sessions/{session_id}/run-checks")
+def run_checks(
+    session_id: str,
+    body: RunChecksRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> Dict[str, Any]:
+    """Dispatches multiple TOOL-kind checks in a single call and returns
+    all results together.
+
+    The model calls this endpoint via a single tool_use block whose
+    arguments carry the list of check IDs and the shared input dict.
+    The harness runs every check and returns the consolidated findings
+    list — no per-check round trip, no model waiting between calls.
+
+    Only TOOL-kind items are accepted. GATE, HYBRID, and JUDGMENT items
+    are rejected with a 400 so the model cannot accidentally skip
+    HYBRID adjudication by treating nominee results as verdicts."""
+    session = _get_session(user_id, session_id)
+
+    unknown = [t for t in body.tool_ids if t not in set(registry.ids())]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown tool id(s): {', '.join(sorted(unknown))}")
+
+    wrong_kind = []
+    for tid in body.tool_ids:
+        tool = registry.get(tid)
+        if tool.kind not in (EnforcementKind.TOOL, EnforcementKind.GATE):
+            wrong_kind.append(f"{tid} ({tool.kind.name})")
+    if wrong_kind:
+        raise HTTPException(
+            status_code=400,
+            detail=f"run-checks only accepts TOOL and GATE items. These are not: {', '.join(wrong_kind)}",
+        )
+
+    results = []
+    all_passed = True
+    for tid in body.tool_ids:
+        try:
+            result = registry.dispatch_by_id(tid, body.inputs, session=session)
+            results.append({
+                "tool_id": tid,
+                "passed": result.passed,
+                "findings": result.findings,
+                "data": result.data,
+            })
+            if not result.passed:
+                all_passed = False
+        except Exception:
+            logger.exception("Tool %s raised in run-checks for session %s", tid, session_id)
+            results.append({
+                "tool_id": tid,
+                "passed": False,
+                "findings": [{"severity": "Critical", "issue": f"Tool {tid} failed to run.", "fix": "Check server logs."}],
+                "data": {},
+            })
+            all_passed = False
+
+    return {"all_passed": all_passed, "results": results}
+
+
 @app.post("/sessions/{session_id}/chat")
 def chat(
     session_id: str,
