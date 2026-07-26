@@ -298,7 +298,7 @@ async function sendMessage() {
   input.style.height = "auto";
   clearAttachmentChip();
   setComposerDisabled(true);
-  showThinking(true);
+  showStatus("Thinking...");
 
   try {
     const response = await withSessionRetry(function (sessionId) {
@@ -308,15 +308,20 @@ async function sendMessage() {
         body: JSON.stringify({ message: messageToSend }),
       });
     });
-    showThinking(false);
-    if (response.ok) {
-      const body = await response.json();
-      appendMessage("assistant", body.text);
-    } else {
+
+    // Pre-flight failures (rate limit, bad tool_ids, auth) are checked
+    // in main.py before any streaming starts and still come back as a
+    // plain JSON error response with a real HTTP status, exactly as
+    // before this change - only a successful response is a stream.
+    if (!response.ok) {
+      hideStatus();
       await handleChatError(response);
+      return;
     }
+
+    await consumeChatStream(response);
   } catch (err) {
-    showThinking(false);
+    hideStatus();
     appendMessage("error", "Could not reach Iris. Check your connection and try again.");
   } finally {
     setComposerDisabled(false);
@@ -324,7 +329,79 @@ async function sendMessage() {
   }
 }
 
+async function consumeChatStream(response) {
+  // Server-Sent Events, read by hand rather than via EventSource:
+  // EventSource only supports GET, and this is a POST. Each event is
+  // "data: <json>\n\n"; chunks can split an event across reads, so
+  // partial text is buffered and only complete events (delimited by
+  // the blank line) are parsed out of it.
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let sawTerminalEvent = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary;
+    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const line = rawEvent.split("\n").find(function (l) {
+        return l.indexOf("data: ") === 0;
+      });
+      if (!line) continue;
+
+      let event;
+      try {
+        event = JSON.parse(line.slice("data: ".length));
+      } catch (err) {
+        continue; // an unparseable event is dropped, not fatal to the stream
+      }
+
+      if (event.type === "status") {
+        showStatus(event.message);
+      } else if (event.type === "tool_call") {
+        showStatus("Running: " + event.tool);
+      } else if (event.type === "done") {
+        sawTerminalEvent = true;
+        hideStatus();
+        appendMessage("assistant", event.text);
+      } else if (event.type === "error") {
+        sawTerminalEvent = true;
+        hideStatus();
+        appendMessage("system", event.detail || "Something went wrong on Iris's end. Try again in a moment.");
+      }
+      // "tool_result" carries no separate UI treatment: the tool_call
+      // event already said what was running, and the next status or
+      // tool_call event replaces it, which is enough signal without
+      // adding a second, competing display for pass/fail detail the
+      // final assistant message will already summarize.
+    }
+  }
+
+  if (!sawTerminalEvent) {
+    // The connection closed with no "done" or "error" event, most
+    // likely a network drop or the server process restarting
+    // mid-stream (the same in-memory-session reality withSessionRetry
+    // exists for). Silence here would be exactly the empty-bubble
+    // problem this whole mechanism was built to avoid.
+    hideStatus();
+    appendMessage("error", "The connection to Iris was lost partway through. Try again.");
+  }
+}
+
 async function handleChatError(response) {
+  // Only ever reached for pre-flight failures now (429 rate limit, 400
+  // bad tool_ids, 401 auth, or a 404 the session-retry already failed
+  // to recover from) - main.py checks all of these before starting
+  // the SSE stream. Anything that happens once the model is actually
+  // involved (upstream API errors, tool-loop exhaustion) arrives as an
+  // "error" event inside the stream instead, handled in
+  // consumeChatStream, since by that point the HTTP status is already
+  // committed to 200 and cannot change.
   const body = await safeJson(response);
   const detail =
     body && typeof body.detail === "string"
@@ -335,12 +412,6 @@ async function handleChatError(response) {
 
   if (response.status === 429) {
     appendMessage("system", "You're sending messages faster than Iris can keep up. Wait a bit and try again.");
-  } else if (response.status === 502) {
-    // The harness is fine; the model API isn't. The server's message
-    // says whether waiting helps or the conversation needs resetting.
-    appendMessage("system", detail || "The model API is unavailable right now. Try again in a moment.");
-  } else if (response.status === 409) {
-    appendMessage("system", detail || "Iris could not finish that. Try rephrasing.");
   } else if (response.status === 400) {
     appendMessage("error", detail || "That request was not valid.");
   } else if (response.status === 401) {
@@ -364,11 +435,15 @@ function setComposerDisabled(disabled) {
   document.getElementById("message-input").disabled = disabled;
 }
 
-function showThinking(visible) {
-  document.getElementById("thinking-indicator").hidden = !visible;
-  if (visible) {
-    document.getElementById("thinking-indicator").scrollIntoView({ behavior: "smooth", block: "end" });
-  }
+function showStatus(text) {
+  const indicator = document.getElementById("status-indicator");
+  document.getElementById("status-text").textContent = text;
+  indicator.hidden = false;
+  indicator.scrollIntoView({ behavior: "smooth", block: "end" });
+}
+
+function hideStatus() {
+  document.getElementById("status-indicator").hidden = true;
 }
 
 // ---------------------------------------------------------------------------

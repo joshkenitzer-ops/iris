@@ -36,12 +36,12 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import app.tools  # noqa: F401  (import for its decorator side effects; do not remove)
-from app.claude_client import ToolLoopExhausted, UpstreamModelError, run_turn
+from app.claude_client import stream_turn
 from app.clerk_auth import ClerkAuthError, get_verifier
 from app.config import (
     CHAT_RATE_LIMIT_CALLS,
@@ -529,59 +529,69 @@ def chat(
     session_id: str,
     body: ChatRequest,
     user_id: str = Depends(get_current_user_id),
-) -> Dict[str, Any]:
+) -> StreamingResponse:
+    """Streams progress as Server-Sent Events rather than returning
+    once at the end.
+
+    Everything that can be checked without calling the model
+    (rate limit, unknown tool_ids, session lookup) still happens here,
+    before the stream starts, and still fails as a normal HTTP error
+    with a real status code, exactly as before this change: the
+    client can only tell 429/400/404 apart from a streamed response
+    by its Content-Type, and there is no reason to make it do that for
+    checks that were always synchronous.
+
+    Once streaming starts, the HTTP status is committed to 200 and can
+    never change, which is why every failure from that point on
+    (upstream API errors, tool-loop exhaustion, anything unexpected)
+    is carried as an "error" event inside the stream instead of an
+    HTTP status code - see stream_turn's docstring."""
     _chat_rate_limiter.check(user_id)
     session = _get_session(user_id, session_id)
 
     if body.tool_ids is not None:
         unknown = [t for t in body.tool_ids if t not in set(registry.ids())]
         if unknown:
-            # Was a KeyError escaping as a 500; bad client input is a 400
-            # (S4, pre-deploy review 2026-07-25).
             raise HTTPException(status_code=400, detail=f"Unknown tool id(s): {', '.join(sorted(unknown))}")
 
-    # Serialize concurrent turns on one session: run_turn mutates
-    # session state through needs_session tools, and two overlapping
-    # turns would interleave those writes (S1).
-    with store.lock_for(user_id, session_id):
-        session.append_messages([{"role": "user", "content": body.message}])
-        try:
-            result = run_turn(
-                spec_text=_get_spec_text(),
-                messages=list(session.messages),
-                session=session,
-                tool_ids=body.tool_ids,
-            )
-        except ToolLoopExhausted:
-            logger.warning("Tool loop exhausted for session %s", session_id)
-            raise HTTPException(
-                status_code=409,
-                detail="The assistant could not complete this turn. Rephrase and try again.",
-            ) from None
-        except UpstreamModelError as exc:
-            # 502, not 500: the harness worked, the model API did not.
-            # The distinction matters to whoever is debugging, and the
-            # message tells the user whether waiting will help.
-            logger.error("Upstream model error for session %s: %s", session_id, exc)
-            if exc.status_code == 429:
-                detail = "The model API is rate-limiting requests right now. Wait a moment and try again."
-            elif exc.status_code is not None and 500 <= exc.status_code < 600:
-                detail = "The model API is having trouble right now. Wait a moment and try again."
-            elif exc.status_code == 400:
-                detail = (
-                    "The model API rejected this request. This conversation may have grown too "
-                    "long to continue; start a new session to reset it."
-                )
-            else:
-                detail = "Could not reach the model API. Try again in a moment."
-            raise HTTPException(status_code=502, detail=detail) from None
+    lock = store.lock_for(user_id, session_id)
 
-        # Replace rather than append: run_turn returns the full updated
-        # transcript, already normalized to plain dicts.
-        session.messages = result["messages"][-MAX_TRANSCRIPT_MESSAGES:]
-        store.save(session)
+    def event_stream():
+        # Serialize concurrent turns on one session: stream_turn
+        # mutates session state through needs_session tools, and two
+        # overlapping turns would interleave those writes (S1). Held
+        # for the whole streamed duration, same as it was held for the
+        # whole synchronous call before this change - the exclusivity
+        # this protects is per turn, not per network round trip.
+        with lock:
+            session.append_messages([{"role": "user", "content": body.message}])
+            try:
+                for event in stream_turn(
+                    spec_text=_get_spec_text(),
+                    messages=list(session.messages),
+                    session=session,
+                    tool_ids=body.tool_ids,
+                ):
+                    if event["type"] == "done":
+                        session.messages = event["messages"][-MAX_TRANSCRIPT_MESSAGES:]
+                        store.save(session)
+                        yield _sse_event({"type": "done", "text": event["text"]})
+                    else:
+                        yield _sse_event(event)
+            except Exception:  # noqa: BLE001
+                # A safety net for anything stream_turn doesn't already
+                # turn into a structured "error" event. Logged in full;
+                # the client gets the same generic message main.py's
+                # top-level handler already uses for everything else,
+                # never exception detail (S3).
+                logger.exception("Unhandled exception mid-stream for session %s", session_id)
+                yield _sse_event({"type": "error", "detail": "Something went wrong on Iris's end. Try again in a moment."})
 
-    return {"text": result["text"]}
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def _sse_event(event: Dict[str, Any]) -> str:
+    return f"data: {json.dumps(event)}\n\n"
 
 
 # ---------------------------------------------------------------------------

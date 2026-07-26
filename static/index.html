@@ -57,6 +57,9 @@
 <div id="app" class="app" hidden>
 
   <header class="app-header">
+    <div class="header-brand" aria-hidden="true">
+      <span class="lore-mark">Lore</span>
+    </div>
     <span class="lore-display app-wordmark">Iris</span>
     <div class="header-actions">
       <button id="new-session-btn" class="lore-btn-ghost">New session</button>
@@ -67,8 +70,9 @@
   <main class="chat-main">
     <div id="message-list" class="message-list" aria-live="polite"></div>
 
-    <div id="thinking-indicator" class="thinking-indicator" hidden>
-      <span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>
+    <div id="status-indicator" class="status-indicator" hidden>
+      <span class="status-dot"></span>
+      <span id="status-text">Thinking...</span>
     </div>
   </main>
 

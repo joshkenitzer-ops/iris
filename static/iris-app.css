@@ -96,20 +96,44 @@ body {
 }
 
 .app-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   padding: var(--lore-space-4) var(--lore-space-6);
   border-bottom: var(--lore-rule-dim);
   flex-shrink: 0;
 }
 
+.header-brand {
+  justify-self: start;
+}
+
+/* The Lore mark, rebuilt as live text rather than an image: the
+   source PNG had a baked-in opaque background (would show as a dark
+   box on the page) and was the full lockup with tagline, too much for
+   a header corner. Cinzel with wide tracking and a purple underline
+   reproduces the same idea, a serif wordmark over a rule, at
+   whatever size and theme this page needs, with no asset to load. A
+   real SVG can replace this later without touching any other file. */
+.lore-mark {
+  font-family: var(--lore-font-display);
+  font-size: var(--lore-text-sm);
+  font-weight: var(--lore-weight-semibold);
+  letter-spacing: var(--lore-tracking-widest);
+  text-transform: uppercase;
+  color: var(--lore-text-secondary);
+  padding-bottom: 3px;
+  border-bottom: 2px solid var(--lore-purple);
+}
+
 .app-wordmark {
+  justify-self: center;
   font-size: var(--lore-text-xl);
   color: var(--lore-amber-light);
 }
 
 .header-actions {
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: var(--lore-space-4);
@@ -185,36 +209,43 @@ body {
 }
 
 /* Doherty Threshold: a chat call can run several tool-use rounds
-   before replying. Three dots pulsing in sequence reads as "working",
-   not "broken", during that wait. */
-.thinking-indicator {
+   before replying. Previously three dots pulsing in sequence with no
+   information behind them; now the actual status text streamed from
+   the server (see stream_turn in app/claude_client.py), with one
+   pulsing dot kept as the "still alive" cue alongside real words. */
+.status-indicator {
   align-self: flex-start;
   max-width: var(--iris-work-width);
   width: 100%;
   margin: 0 auto;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: var(--lore-space-2);
   padding: var(--lore-space-3) var(--lore-space-4);
 }
 
-.thinking-dot {
+.status-dot {
   width: 6px;
   height: 6px;
+  flex-shrink: 0;
   border-radius: 50%;
   background: var(--lore-amber);
-  animation: thinking-pulse 1.2s ease-in-out infinite;
+  animation: status-pulse 1.2s ease-in-out infinite;
 }
 
-.thinking-dot:nth-child(2) { animation-delay: 0.15s; }
-.thinking-dot:nth-child(3) { animation-delay: 0.3s; }
+#status-text {
+  font-family: var(--lore-font-mono);
+  font-size: var(--lore-text-sm);
+  color: var(--lore-text-secondary);
+}
 
-@keyframes thinking-pulse {
+@keyframes status-pulse {
   0%, 80%, 100% { opacity: 0.25; }
   40% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .thinking-dot { animation: none; opacity: 0.7; }
+  .status-dot { animation: none; opacity: 0.7; }
 }
 
 /* ── Composer ── */
@@ -320,4 +351,5 @@ body {
   .chat-main { padding: var(--lore-space-4); }
   .composer { padding: var(--lore-space-3) var(--lore-space-4) var(--lore-space-4); }
   .message { max-width: 92%; }
+  .header-brand { display: none; }
 }
