@@ -41,6 +41,23 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
+class UpstreamModelError(RuntimeError):
+    """A failure reported by the Anthropic API itself, as opposed to a
+    bug in this harness.
+
+    These are ordinary operating conditions, not exceptional ones: the
+    API can be overloaded, rate-limit us, or reject a request whose
+    accumulated context has grown past the model's window. Before this
+    existed they all escaped as unhandled exceptions and reached the
+    user as a bare 500 saying "something went wrong on Iris's end,"
+    which is both unhelpful and, for an upstream outage or a
+    context-size problem, not even accurate."""
+
+    def __init__(self, status_code, message: str):
+        self.status_code = status_code
+        super().__init__(message)
+
+
 def _blocks_to_plain(blocks) -> List[Dict[str, Any]]:
     """Convert SDK content blocks to plain JSON-safe dicts.
 
@@ -104,19 +121,39 @@ def run_turn(
     working_messages = list(messages)
 
     for _ in range(max_tool_iterations):
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=max_tokens,
-            system=[
-                {
-                    "type": "text",
-                    "text": spec_text,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            tools=tools,
-            messages=working_messages,
+        # Logged at every round trip because accumulated context is the
+        # most likely cause of a request that worked earlier in a
+        # conversation and fails later: tool results (an ingested
+        # document can be up to MAX_INGEST_TEXT_CHARS on its own) stay
+        # in the transcript and are resent every turn. When a chat
+        # starts failing partway through a session, this is the first
+        # number to look at.
+        approx_chars = sum(len(str(m.get("content", ""))) for m in working_messages)
+        logger.info(
+            "Claude call: %d messages, ~%d chars of transcript, %d tools",
+            len(working_messages),
+            approx_chars,
+            len(tools),
         )
+
+        try:
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=max_tokens,
+                system=[
+                    {
+                        "type": "text",
+                        "text": spec_text,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                tools=tools,
+                messages=working_messages,
+            )
+        except anthropic.APIError as exc:
+            status = getattr(exc, "status_code", None)
+            logger.exception("Anthropic API call failed (status=%s)", status)
+            raise UpstreamModelError(status, str(exc)) from exc
 
         working_messages = working_messages + [
             {"role": "assistant", "content": _blocks_to_plain(response.content)}

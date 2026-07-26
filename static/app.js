@@ -335,6 +335,10 @@ async function handleChatError(response) {
 
   if (response.status === 429) {
     appendMessage("system", "You're sending messages faster than Iris can keep up. Wait a bit and try again.");
+  } else if (response.status === 502) {
+    // The harness is fine; the model API isn't. The server's message
+    // says whether waiting helps or the conversation needs resetting.
+    appendMessage("system", detail || "The model API is unavailable right now. Try again in a moment.");
   } else if (response.status === 409) {
     appendMessage("system", detail || "Iris could not finish that. Try rephrasing.");
   } else if (response.status === 400) {

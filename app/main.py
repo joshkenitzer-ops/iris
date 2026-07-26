@@ -41,7 +41,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import app.tools  # noqa: F401  (import for its decorator side effects; do not remove)
-from app.claude_client import ToolLoopExhausted, run_turn
+from app.claude_client import ToolLoopExhausted, UpstreamModelError, run_turn
 from app.clerk_auth import ClerkAuthError, get_verifier
 from app.config import (
     CHAT_RATE_LIMIT_CALLS,
@@ -64,6 +64,20 @@ from app.spec_loader import load_spec_text
 
 SPEC_PATH = Path(__file__).resolve().parent.parent / "docs" / "iris-spec.md"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+# Without this, nothing this app logs ever reaches the host's log
+# stream. A bare logging.getLogger() has no handler, and uvicorn
+# configures only its own loggers, so every logger.exception() in this
+# file, including the one in the unhandled-exception handler below,
+# was being written into the void. That was discovered on 2026-07-26
+# while trying to diagnose a production 500: the handler was doing
+# exactly its job and the traceback still never appeared in Render's
+# logs, which made the one tool built for diagnosing failures useless
+# at the moment it was needed.
+logging.basicConfig(
+    level=os.environ.get("IRIS_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 logger = logging.getLogger("iris")
 
@@ -544,6 +558,23 @@ def chat(
                 status_code=409,
                 detail="The assistant could not complete this turn. Rephrase and try again.",
             ) from None
+        except UpstreamModelError as exc:
+            # 502, not 500: the harness worked, the model API did not.
+            # The distinction matters to whoever is debugging, and the
+            # message tells the user whether waiting will help.
+            logger.error("Upstream model error for session %s: %s", session_id, exc)
+            if exc.status_code == 429:
+                detail = "The model API is rate-limiting requests right now. Wait a moment and try again."
+            elif exc.status_code is not None and 500 <= exc.status_code < 600:
+                detail = "The model API is having trouble right now. Wait a moment and try again."
+            elif exc.status_code == 400:
+                detail = (
+                    "The model API rejected this request. This conversation may have grown too "
+                    "long to continue; start a new session to reset it."
+                )
+            else:
+                detail = "Could not reach the model API. Try again in a moment."
+            raise HTTPException(status_code=502, detail=detail) from None
 
         # Replace rather than append: run_turn returns the full updated
         # transcript, already normalized to plain dicts.
