@@ -530,10 +530,14 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
             "inputs": {
                 "type": "object",
                 "description": (
-                    "Shared input dict. For docx-based checks, pass "
+                    "Shared input dict — a JSON object of key/value pairs, "
+                    "e.g. {\"attachment_id\": \"...\"} or {\"text\": \"...\"}. "
+                    "Never an array. For docx-based checks, pass "
                     "attachment_id instead of docx_base64 — harness "
                     "resolves bytes server-side."
                 ),
+                "additionalProperties": True,
+                "minProperties": 1,
             },
         },
         "required": ["tool_ids", "inputs"],
@@ -549,6 +553,31 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
     2. data stripping: only passed/findings returned, never tool data
        payloads (candidate lists, extracted text, scores)."""
     from app.enforcement import EnforcementKind as EK
+
+    # Anthropic's SDK deserializes a JSON-schema "object" tool argument as a
+    # Python dict, so `inputs` should already be one. But `input_schema`
+    # only declares `{"type": "object"}` with no property constraints, so a
+    # malformed model call (e.g. inputs supplied as a list of one-element
+    # entries instead of key/value pairs) reaches this function unchecked.
+    # dict(inputs) on that shape raises ValueError deep inside the batch
+    # dispatcher, which aborts the entire batch (all tool_ids in it) with an
+    # opaque traceback instead of a finding the model can act on. Validate
+    # explicitly and fail closed with a clear, model-legible error instead.
+    if not isinstance(inputs, dict):
+        return ToolResult(
+            passed=False,
+            findings=[{
+                "severity": "Critical",
+                "issue": (
+                    f"run_batch_checks received 'inputs' as {type(inputs).__name__}, "
+                    "not an object/dict of key-value pairs."
+                ),
+                "fix": (
+                    "Pass inputs as a JSON object, e.g. {\"attachment_id\": \"...\"} "
+                    "or {\"text\": \"...\"}, not a list or a single value."
+                ),
+            }],
+        )
 
     # Resolve attachment_id -> docx_base64 server-side if provided
     inputs = dict(inputs)
