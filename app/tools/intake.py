@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 from typing import List
 
 from app.config import EXTRACTION_CONFIDENCE
 from app.enforcement import EnforcementKind, ToolResult, registry, tool
 from app.session import Session
 from app.untrusted_text import wrap_untrusted
+
+logger = logging.getLogger("iris.intake")
 
 
 @tool(
@@ -92,6 +95,7 @@ def _ingest_docx(raw: bytes) -> ToolResult:
 
     document = Document(io.BytesIO(raw))
     paragraphs = [p.text for p in document.paragraphs if p.text.strip()]
+    table_count = len(document.tables)
     for table in document.tables:
         for row in table.rows:
             for cell in row.cells:
@@ -99,7 +103,15 @@ def _ingest_docx(raw: bytes) -> ToolResult:
                     paragraphs.append(cell.text)
     text = "\n".join(paragraphs)
 
+    logger.info(
+        "ingest_document (docx): %d paragraphs (incl. table cells), %d tables, %d chars total extracted",
+        len(paragraphs),
+        table_count,
+        len(text),
+    )
+
     if not text.strip():
+        logger.warning("ingest_document (docx): extraction produced no usable text (empty after strip)")
         return ToolResult(
             passed=False,
             findings=[
@@ -140,7 +152,14 @@ def _ingest_pdf(raw: bytes) -> ToolResult:
     pages_text = [page.extract_text() or "" for page in reader.pages]
     text = "\n".join(pages_text)
 
+    logger.info(
+        "ingest_document (pdf): %d pages, %d chars total extracted",
+        len(reader.pages),
+        len(text),
+    )
+
     if not text.strip():
+        logger.warning("ingest_document (pdf): extraction produced no usable text (empty after strip) — likely scan/no OCR")
         return ToolResult(
             passed=False,
             findings=[
@@ -198,6 +217,23 @@ def score_extraction_confidence(
     role_blocks_with_dates: int,
     date_parse_failure_ratio: float,
 ) -> ToolResult:
+    # These four values are supplied BY THE MODEL as tool-call arguments,
+    # not measured directly by this function or by ingest_document — this
+    # tool only applies thresholds to whatever numbers it's handed. Logging
+    # them raw is essential: a "100% date parse failure" in the user-facing
+    # message could reflect a real signal computed from actual extracted
+    # text, or the model estimating/asserting a plausible-looking number
+    # without having done the underlying parsing. This log line is what
+    # lets that distinction be checked after the fact.
+    logger.info(
+        "score_extraction_confidence inputs: ocr_confidence=%.3f replacement_char_ratio=%.4f "
+        "role_blocks_with_dates=%d date_parse_failure_ratio=%.3f",
+        ocr_confidence,
+        replacement_char_ratio,
+        role_blocks_with_dates,
+        date_parse_failure_ratio,
+    )
+
     thresholds = EXTRACTION_CONFIDENCE
     tripped = []
 
@@ -211,6 +247,7 @@ def score_extraction_confidence(
         tripped.append(f"date_parse_failure_ratio {date_parse_failure_ratio:.2f} above {thresholds['max_date_parse_failure_ratio']}")
 
     passed = len(tripped) == 0
+    logger.info("score_extraction_confidence result: passed=%s tripped=%s", passed, tripped)
     findings = (
         []
         if passed
