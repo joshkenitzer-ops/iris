@@ -505,22 +505,18 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
     id="T-9.15",
     name="run_batch_checks",
     description=(
-        "Runs multiple TOOL-kind checks in a single call to the harness, "
-        "eliminating the per-check model round trip that makes the audit "
-        "slow. Pass a list of tool IDs (T-3.1, T-3.3, T-4.1, etc.) and "
-        "the shared input dict; the harness dispatches all of them and "
-        "returns every result at once. Use this instead of calling each "
-        "check individually. Only TOOL-kind items are accepted; HYBRID "
-        "and JUDGMENT items are not — their results require model "
-        "adjudication and must remain separate calls. "
-        "For Phase 1 (Audit), call this once with: T-3.1, T-3.3, T-3.4, "
-        "T-3.5, T-3.6, T-3.7, T-3.8 and input={\"text\": <resume_text>}. "
-        "For Phase 4 (Formatting), call once with: T-4.1, T-4.2, T-4.3, "
-        "T-4.4, T-4.5, T-4.6, T-4.7, T-4.9, T-4.14 and the document text. "
-        "For Phase 8 (Final Review), call once with: T-8.5, T-8.6, T-8.7, "
-        "T-8.12, T-8.13, T-8.14, T-8.15 and the document pair. "
-        "The endpoint is POST /sessions/{session_id}/run-checks. "
-        "The harness routes this for you when you call this tool."
+        "Runs multiple TOOL-kind checks in a single harness call, "
+        "eliminating per-check model round trips. "
+        "IMPORTANT: never pass raw docx_base64 bytes in inputs — "
+        "pass attachment_id and the harness resolves bytes server-side, "
+        "keeping large binary payloads out of model context entirely. "
+        "For Phase 1 (Audit): tool_ids=[T-3.1,T-3.3,T-3.4,T-3.5,T-3.6,T-3.7,T-3.8], "
+        "inputs={text: <extracted_text>}. "
+        "For Phase 4 (Formatting): tool_ids=[T-4.1,T-4.2,T-4.3,T-4.4,T-4.9], "
+        "inputs={attachment_id: <id>}. "
+        "For Phase 8 (Final Review): tool_ids=[T-8.5,T-8.6,T-8.7,T-8.12,T-8.14,T-8.15], "
+        "inputs={attachment_id: <id>}. "
+        "Only TOOL and GATE kind items are accepted."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={
@@ -533,7 +529,11 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
             },
             "inputs": {
                 "type": "object",
-                "description": "Shared input dict passed to every tool in the batch.",
+                "description": (
+                    "Shared input dict. For docx-based checks, pass "
+                    "attachment_id instead of docx_base64 — harness "
+                    "resolves bytes server-side."
+                ),
             },
         },
         "required": ["tool_ids", "inputs"],
@@ -541,17 +541,30 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
     needs_session=True,
 )
 def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolResult:
-    """Harness-side execution of the batch.
+    """Harness-side batch execution with two payload protections:
 
-    Returns ONLY passed/findings per tool — never the data field.
-    The data payloads from individual tools (candidate lists, extracted
-    text, confidence scores) can be tens of thousands of tokens for a
-    large resume. Sending them all back in one tool result caused the
-    audit to stall for 10+ minutes because the model was processing a
-    massive consolidated payload. The model only needs to know whether
-    each check passed and what the findings are — data is for
-    harness-internal use only."""
+    1. attachment_id resolution: if inputs has attachment_id, harness
+       resolves docx bytes from session store and substitutes them
+       before dispatching — model never handles raw base64.
+    2. data stripping: only passed/findings returned, never tool data
+       payloads (candidate lists, extracted text, scores)."""
     from app.enforcement import EnforcementKind as EK
+
+    # Resolve attachment_id -> docx_base64 server-side if provided
+    inputs = dict(inputs)
+    if "attachment_id" in inputs and "docx_base64" not in inputs:
+        attachment_id = inputs.pop("attachment_id")
+        attachment = session.get_attachment(attachment_id)
+        if attachment is None:
+            return ToolResult(
+                passed=False,
+                findings=[{
+                    "severity": "Critical",
+                    "issue": f"No attachment '{attachment_id}' on this session.",
+                    "fix": "Upload the file first and use the returned attachment_id.",
+                }],
+            )
+        inputs["docx_base64"] = attachment.file_base64
 
     per_tool = []
     all_passed = True
@@ -561,13 +574,12 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
         try:
             spec = registry.get(tid)
             if spec.kind not in (EK.TOOL, EK.GATE):
-                finding = {
+                all_findings.append({
                     "severity": "High",
-                    "issue": f"{tid} is {spec.kind.name}, not TOOL or GATE — call it separately.",
+                    "issue": f"{tid} is {spec.kind.name} — call it separately.",
                     "fix": "Remove from batch.",
-                }
+                })
                 per_tool.append({"tool_id": tid, "passed": False})
-                all_findings.append(finding)
                 all_passed = False
                 continue
             result = registry.dispatch_by_id(tid, inputs, session=session)
@@ -576,19 +588,16 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
             if not result.passed:
                 all_passed = False
         except Exception as exc:  # noqa: BLE001
-            finding = {
+            all_findings.append({
                 "severity": "Critical",
                 "issue": f"Tool {tid} raised: {exc}",
                 "fix": "Check server logs.",
-            }
+            })
             per_tool.append({"tool_id": tid, "passed": False})
-            all_findings.append(finding)
             all_passed = False
 
     return ToolResult(
         passed=all_passed,
         findings=all_findings,
-        # Minimal data: just pass/fail per tool so the model can
-        # reference which checks ran, without the verbose data payloads.
         data={"summary": per_tool},
     )
