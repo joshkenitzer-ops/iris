@@ -261,6 +261,34 @@ def route_low_confidence_to_manual_review(extraction_passed: bool, tripped_signa
 
 
 # ---------------------------------------------------------------------------
+# T-9.14: get current date for master resume filename generation
+# ---------------------------------------------------------------------------
+
+
+@tool(
+    id="T-9.14",
+    name="get_todays_date",
+    description=(
+        "Returns today's date in YYYY-MM-DD format for use in master "
+        "resume filenames. The spec requires the master resume to use "
+        "the current date at generation time, not any date embedded in "
+        "the user's uploaded source document. Always call this tool "
+        "when constructing the master resume filename rather than "
+        "deriving a date from the uploaded file."
+    ),
+    kind=EnforcementKind.TOOL,
+    input_schema={"type": "object", "properties": {}},
+)
+def get_todays_date() -> ToolResult:
+    from datetime import datetime as _dt
+
+    return ToolResult(
+        passed=True,
+        data={"date": _dt.now().strftime("%Y-%m-%d")},
+    )
+
+
+# ---------------------------------------------------------------------------
 # T-0.6: careerInventory schema validation
 # ---------------------------------------------------------------------------
 

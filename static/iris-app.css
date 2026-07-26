@@ -128,7 +128,9 @@ body {
 
 .app-wordmark {
   justify-self: center;
-  font-size: var(--lore-text-xl);
+  font-size: var(--lore-text-2xl);
+  font-weight: var(--lore-weight-bold);
+  letter-spacing: var(--lore-tracking-wide);
   color: var(--lore-amber-light);
 }
 

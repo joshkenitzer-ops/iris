@@ -255,6 +255,7 @@ v0.4 already mandates programmatic verification throughout this phase. The tiers
 | T-9.10 | Authentication | TOOL | V1. Required before data can be scoped to anyone. |
 | T-9.11 | Session-scoped data store | TOOL | Registry, term lists, and preferences held per session and discarded at logout. No persistence. |
 | T-9.12 | Cross-user isolation at the tool boundary | GATE | User data enters model context only through a tool call scoped by authenticated identity. Never two users' data in one context with an instruction to keep them apart. A cross-user leak of a custom term list means one user's employer-confidential names in a stranger's cover letter. Structurally impossible, not prompted against. |
+| T-9.14 | Get today's date for filename generation | TOOL | Returns the current date in YYYY-MM-DD format. Called before rendering a master resume so the filename uses today's date rather than a date from the source document. |
 | T-9.13 | Concurrency safety | TOOL | Multiple simultaneous sessions assumed from V1. |
 
 ---

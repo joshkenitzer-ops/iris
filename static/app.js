@@ -384,7 +384,7 @@ async function consumeChatStream(response) {
       } else if (event.type === "tool_call") {
         showStatus("Running: " + event.tool);
       } else if (event.type === "file_ready") {
-        appendDownloadButton(event.file_id, event.filename);
+        appendDownloadButton(event.filename, event.content_type, event.data_base64);
       } else if (event.type === "done") {
         sawTerminalEvent = true;
         hideStatus();
@@ -483,9 +483,7 @@ function appendMessage(role, text) {
   el.scrollIntoView({ behavior: "smooth", block: "end" });
 }
 
-function appendDownloadButton(fileId, filename) {
-  // Rendered as a visually distinct card, not a chat bubble, so it
-  // reads as "something you act on" rather than a message.
+function appendDownloadButton(filename, contentType, dataBase64) {
   const list = document.getElementById("message-list");
   const card = document.createElement("div");
   card.className = "download-card";
@@ -501,8 +499,13 @@ function appendDownloadButton(fileId, filename) {
   const btn = document.createElement("a");
   btn.className = "lore-btn-primary download-btn";
   btn.textContent = "Download";
-  btn.href = "/sessions/" + currentSessionId + "/files/" + fileId;
   btn.download = filename;
+
+  if (dataBase64) {
+    btn.href = "data:" + contentType + ";base64," + dataBase64;
+  } else {
+    btn.href = "/sessions/" + currentSessionId + "/files/" + filename;
+  }
 
   card.appendChild(icon);
   card.appendChild(label);

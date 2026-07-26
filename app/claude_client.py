@@ -260,14 +260,45 @@ def run_turn(
 
 
 def _humanize_tool_name(name: str) -> str:
-    """'check_headline_skills_backed' -> 'check headline skills backed'.
+    """Converts a snake_case tool name into a readable status string.
 
-    Deliberately not a curated display-name lookup table: with 90+
-    tools, a table needs updating every time one is added or renamed,
-    and silently falls out of sync when someone forgets. This can
-    never drift, at the cost of a name that reads as code rather than
-    prose."""
-    return name.replace("_", " ")
+    'check_em_dash' -> 'Checking for em dashes'
+    'render_resume_docx' -> 'Rendering resume'
+    'extract_facts_into_registry' -> 'Extracting facts'
+
+    Uses a small prefix map to add context ('check_' -> 'Checking',
+    'render_' -> 'Rendering', etc.) and strips technical suffixes
+    that mean nothing to the user ('_docx', '_in_docx', '_pattern').
+    Falls back to capitalizing the plain words if no prefix matches —
+    still better than 'check em dash in docx'."""
+    _PREFIX_MAP = {
+        "check_": "Checking",
+        "render_": "Rendering",
+        "extract_": "Extracting",
+        "score_": "Scoring",
+        "validate_": "Validating",
+        "export_": "Exporting",
+        "import_": "Loading",
+        "apply_": "Applying",
+        "get_": "Getting",
+        "route_": "Routing",
+        "generate_": "Generating",
+        "build_": "Building",
+    }
+    _STRIP_SUFFIXES = [
+        "_in_docx", "_in_resume", "_in_cover_letter", "_in_document",
+        "_docx", "_pattern", "_into_registry", "_from_registry",
+    ]
+    cleaned = name
+    for suffix in _STRIP_SUFFIXES:
+        if cleaned.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)]
+            break
+    for prefix, verb in _PREFIX_MAP.items():
+        if cleaned.startswith(prefix):
+            rest = cleaned[len(prefix):].replace("_", " ")
+            return f"{verb} {rest}"
+    return cleaned.replace("_", " ").capitalize()
 
 
 def stream_turn(
@@ -315,6 +346,7 @@ def stream_turn(
 
     tools = registry.claude_schemas(tool_ids)
     working_messages = list(messages)
+    iteration = 0
 
     for _ in range(max_tool_iterations):
         approx_chars = sum(len(str(m.get("content", ""))) for m in working_messages)
@@ -324,7 +356,35 @@ def stream_turn(
             approx_chars,
             len(tools),
         )
-        yield {"type": "status", "message": "Thinking..."}
+
+        # Pick a status message that reflects what's actually happening
+        # rather than always saying "Thinking..." — iteration 0 is the
+        # initial response to the user's message; subsequent iterations
+        # are follow-up rounds after tool results come back.
+        if iteration == 0:
+            # Check the last user message for context clues
+            last_user = next(
+                (m.get("content", "") for m in reversed(working_messages) if m.get("role") == "user"),
+                "",
+            )
+            last_user_lower = str(last_user).lower()
+            if "attachment_id" in last_user_lower:
+                status_msg = "Reading your document..."
+            elif any(w in last_user_lower for w in ("audit", "phase 1", "review my")):
+                status_msg = "Running the audit..."
+            elif any(w in last_user_lower for w in ("tailor", "fit check", "job description", "jd")):
+                status_msg = "Checking the fit..."
+            elif any(w in last_user_lower for w in ("cover letter", "letter")):
+                status_msg = "Drafting the cover letter..."
+            elif any(w in last_user_lower for w in ("build", "master", "lock")):
+                status_msg = "Building your master resume..."
+            else:
+                status_msg = "Working on it..."
+        else:
+            status_msg = "Continuing..."
+
+        yield {"type": "status", "message": status_msg}
+        iteration += 1
 
         try:
             # See the matching comment in run_turn: a large max_tokens
@@ -424,14 +484,24 @@ def stream_turn(
                 }
                 yield {"type": "tool_result", "tool": display_name, "passed": result.passed}
                 # If the tool produced a downloadable file, emit a
-                # dedicated event so the frontend can render a real
-                # download button immediately — without waiting for
-                # the model's final "done" text or parsing tool results.
+                # dedicated event with the actual file data embedded.
+                # Previously this only carried a file_id and the
+                # browser fetched /sessions/{id}/files/{file_id} on
+                # click — but that endpoint returns 404 once the
+                # in-memory session expires, which can happen between
+                # render and click. Embedding the base64 payload here
+                # lets the frontend build a data: URL that lives in
+                # the DOM and never depends on session state.
                 if result.passed and result.data and result.data.get("file_id"):
+                    file_id = result.data["file_id"]
+                    filename = result.data.get("filename", "download")
+                    rendered = session.get_rendered_file(file_id) if session else None
                     yield {
                         "type": "file_ready",
-                        "file_id": result.data["file_id"],
-                        "filename": result.data.get("filename", "download"),
+                        "file_id": file_id,
+                        "filename": filename,
+                        "content_type": rendered.content_type if rendered else "application/octet-stream",
+                        "data_base64": rendered.data_base64 if rendered else "",
                     }
             except Exception:  # noqa: BLE001
                 logger.exception("Tool %s raised during dispatch", block.name)
