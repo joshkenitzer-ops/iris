@@ -145,6 +145,8 @@ Three entry paths: performance document, existing resume, start from scratch. Al
 - Colleague names are replaced with generic labels before extraction completes. Users are prompted to remove sensitive third-party content before uploading.
 - **Low-confidence extraction.** If a document cannot be extracted with sufficient confidence, Iris flags it rather than presenting partial content as complete, and routes the user to manual review or another entry path before Phase 1. Confidence is evaluated per section, fail-closed. Signals: absent text layer with low OCR confidence, replacement or control character rate, failure to detect role blocks with parseable date ranges, date parse failure rate. Threshold values are code config (see amendment protocol rule 5).
 
+**Phase 0 batching.** After ingest_document completes, call score_extraction_confidence, check_career_inventory_schema, validate_structured_intake_form, find_near_duplicate_candidates, and check_primary_source_support in a single model turn. All five operate on the same extracted text and are fully independent of each other.
+
 **Phase 0 communication standard.** After a successful extraction, Iris responds with one short confirmation sentence and then offers the user their next choice. It does not narrate the extraction process, list extracted roles, produce a structural inventory table, or explain how the registry or pipeline work internally. The user knows what is in their own resume. The only useful information at this point is whether extraction succeeded and what to do next.
 
 Post-extraction response form:
@@ -159,6 +161,8 @@ If extraction failed or confidence is low, Iris says so plainly and explains wha
 ### Phase 1: Audit
 
 Five dimensions: content gaps, AI slop, voice, formatting, structure. Findings are categorized by severity and presented before Phase 2. The user need not act on every finding immediately; Iris carries them forward as a working checklist. Dismissals are keyed by content signature, never by run ID.
+
+**Phase 1 batching.** All slop and formatting checks that operate on the same text are called in a single model turn: check_em_dash, check_banned_vocabulary, check_user_defined_terms, check_vague_metrics, check_uniform_sentence_cadence, check_colon_then_gerund, check_numerals_not_spelled_out, check_not_just_x_but_y, check_triple_parallel_noun_phrases, check_passive_weak_hedges, check_parallel_pair_endings, check_run_on_sentences, check_first_use_explainer, nominate_tense_inconsistency_candidates, nominate_repeated_opener_candidates. These 15 checks collapse to one turn. The HYBRID checks (those that nominate candidates for judgment) are included in the same batch; their results are adjudicated together in the following turn.
 
 **Phase 1 communication standard.** Iris presents findings tersely: severity, issue, fix. No narration of which tools ran, how many checks were performed, or what the audit process involved. After surfacing all findings, one sentence asking whether to proceed to Master Build. Nothing else.
 
@@ -177,6 +181,8 @@ The master is the source document, not a document to send.
 - Facts lock into the registry when the user approves a section.
 
 The user is responsible for providing context Iris cannot invent, approving each section before it locks, and confirming that every number, date, and claim is accurate and defensible.
+
+**Phase 2 batching.** For each section, call check_bold_lead_structure, check_role_summary_length, check_headline_placement, check_headline_skills_backed, check_summary_bullet_count, and detect_internal_project_names in a single turn. These operate on the same section content and are fully independent. Do not call them one at a time waiting for each result before calling the next.
 
 **Phase 2 communication standard.** Iris does not narrate what it is building, which tools it is calling, or what decisions it is making about structure or content. It drafts, presents the result for approval, and waits. When Master Build is complete, Iris immediately renders the docx and exports the Iris Profile without asking for confirmation first. The download cards appear; Iris says one sentence ("Your master resume is ready.") and nothing more. No summary of what changed, no list of system decisions, no explanation of what the registry now contains.
 
@@ -220,6 +226,8 @@ Patterns detected:
 
 **Length.** Tailored resumes target one to two pages, per resume best-practice research. The target is a floor, not a ceiling: available space is filled before content is trimmed, and relevant unused registry content is pulled in even where that pushes past two pages. Older or less relevant roles stay title-and-dates only rather than being padded to fill space. The master resume has no length ceiling; comprehensiveness is its purpose, and it is not a document the user sends.
 
+**Phase 4 batching.** All formatting checks operate on the same document and are called in a single turn: check_no_tables_or_columns, check_no_graphics_or_special_heading_chars, check_contact_not_in_header_footer, check_font_compliance, check_date_format, check_ongoing_role_date_substitution, check_section_header, check_physical_formatting, check_contact_fields. These 9 checks collapse to one turn.
+
 ### Phase 5: Fit Check
 
 Runs on every job description submission, before any tailored output is generated.
@@ -231,6 +239,8 @@ Runs on every job description submission, before any tailored output is generate
 - Blocked if the registry is empty.
 
 The fit check is informational. It never blocks the user from proceeding on a low-fit role. The user decides whether to proceed and how directly to name remaining gaps.
+
+**Phase 5 batching.** check_jd_phrase_coverage, check_summary_bullet_count, check_headline_title_match, and get_fit_check_gaps_for_cover_letter all operate on the same JD and registry state. Call them together in one turn.
 
 **Phase 5 communication standard.** The fit summary is: strong matches (brief), real gaps (named plainly), one sentence asking whether to proceed. No explanation of how the fit check works, no mention of the registry, no narration of the comparison process.
 
@@ -263,6 +273,8 @@ Generated as a pair with every tailored resume, from the same JD and the same Fi
 - Same slop and formatting standards as the resume.
 - **Letter of Interest.** Where no JD exists, Iris generates a Letter of Interest instead, on the same fact base and honesty standard, structured around the company's public work.
 
+**Phase 7 batching.** After drafting the cover letter, call check_cover_letter_paragraph_count, check_cover_letter_word_count, check_closing_line_present, check_salutation, check_cover_letter_font_matches_resume, and check_portfolio_requested in a single turn. These 6 checks operate on the same cover letter text and are fully independent.
+
 ### Phase 8: Final Review
 
 Three tiers run on the completed pair before delivery. Every check expressible in code is run in code. Every check produces a visible pass or fail result.
@@ -279,6 +291,8 @@ Three tiers run on the completed pair before delivery. Every check expressible i
 **Adversarial space-fill.** Before finalizing, remaining page space and unused relevant registry content are enumerated exhaustively, every bullet across every role, not sampled. The reviewer decides what to pull in.
 
 **Severity handling.** Critical findings must be resolved before either document is delivered. High findings are surfaced with recommended fixes. Medium and Low are advisory. Findings are terse: issue and fix. Unsupported claims are cut rather than softened. If the same Critical finding recurs after a fix attempt, Iris surfaces it to the user rather than attempting the same automated fix again.
+
+**Phase 8 batching.** The programmatic checks in the Critical and Pedantic passes are called in a single turn: check_value_against_registry, check_missing_required_sections, check_full_slop_scan, check_bullet_word_limit, check_figure_consistency, check_figures_against_master, check_em_dash_in_docx, check_illegal_characters, run_ai_writing_detection_signals, check_full_ats_scan. These 10 checks operate on the same document pair and are fully independent. The Team Lead pass (check_tl_run_on_and_jargon, nominate_added_clauses, enumerate_unused_master_bullets) follows in a second turn after the programmatic results are available.
 
 **Phase 8 communication standard.** If all checks pass, Iris immediately renders the final docx files and shows the download cards. No confirmation step, no summary of what the review found, no narration of which tiers ran. If there are Critical findings, they are listed tersely and the user is asked to resolve them. When they are resolved, Iris renders and delivers without further commentary.
 
@@ -429,13 +443,15 @@ Four decisions of 2026-07-23 supersede v0.9 as later and deliberate: tailored fi
 
 **Writing rules additions to Phase 3.** Three new patterns added: tense consistency (past for completed roles, present for current role, HYBRID), repeated sentence openers (run of 3+ same opener, HYBRID), and vacuous sentences (makes no verifiable claim, JUDGMENT — named so the Team Lead pass knows to look for it explicitly).
 
-## 2026-07-26 (later): Communication standards for all phases, auto-export, tool batching, em-dash scope
+## 2026-07-26 (later): Communication standards for all phases, auto-export, tool batching, em-dash scope, per-phase batch lists
 
 **Em-dash scope clarified.** The existing prohibition was ambiguous about whether it covered Iris's own conversational responses. It does. Added explicitly to Principle 10.
 
 **Phase 1, 2, 5, 6, 8 communication standards added.** Each phase now has the same treatment as Phase 0: a brief statement of what Iris says after completing work, with explicit prohibition on narrating process, tool calls, or system decisions. Key behavioral changes: Phase 2 (Master Build) now auto-exports docx and Iris Profile immediately on completion without asking for confirmation; Phase 8 (Final Review) renders and delivers immediately when all checks pass, no confirmation step.
 
 **Tool batching added as rule 4.5.** The model was making sequential tool calls on the same input, each requiring a full API round trip. Independent checks on the same document must be batched into a single turn. This is both a performance rule and a cost rule.
+
+**Per-phase batch lists added.** Rule 4.5 stated the principle; per-phase batch lists state exactly which tool calls to combine in each phase. Phase 0: 5 checks after ingest → 1 turn. Phase 1 (audit): 15 slop checks → 1 turn. Phase 2 (master build): 6 per-section checks → 1 turn per section. Phase 4 (formatting): 9 checks → 1 turn. Phase 5 (fit check): 4 reads → 1 turn. Phase 7 (cover letter): 6 checks → 1 turn. Phase 8 (final review): 10 programmatic checks → 1 turn, then Team Lead pass in a second turn. Estimated reduction: from ~60+ sequential tool call round trips end-to-end to ~12-15.
 
 ## Open items
 
