@@ -50,6 +50,7 @@ user_id rather than relying on the store being empty.
 import importlib
 import json
 import os
+import time
 import unittest
 import uuid
 from unittest.mock import patch
@@ -617,6 +618,30 @@ class TestChatEndpoint(_AuthOverriddenTestCase):
             ],
         )
         self.assertEqual(events[-1], {"type": "done", "text": "Hello there."})
+
+    def test_slow_gap_between_events_sends_sse_heartbeats(self) -> None:
+        """Regression coverage for the connection-drop fix: a single
+        slow model call used to leave the SSE stream silent for as long
+        as it took, and something between the browser and Render (its
+        proxy, most likely) would drop the connection during that
+        silence even though the server was still working fine. A bare
+        ": heartbeat" comment line during any gap keeps the connection
+        looking alive - and, since it's a comment rather than a
+        "data: " line, the client's event parser never sees it as an
+        event, so the final "done" event still arrives correctly."""
+
+        def _slow_then_done(**kwargs):
+            time.sleep(0.05)
+            yield {"type": "done", "text": "finally", "messages": []}
+
+        session_id = self._create_session()
+        with patch.object(self.module, "SSE_HEARTBEAT_INTERVAL_SECONDS", 0.01), patch.object(
+            self.module, "stream_turn", side_effect=_slow_then_done
+        ):
+            response = self.client.post(f"/sessions/{session_id}/chat", json={"message": "hi"})
+        self.assertIn(": heartbeat\n\n", response.text)
+        events = _parse_sse(response.text)
+        self.assertEqual(events, [{"type": "done", "text": "finally"}])
 
     def test_message_over_max_length_is_422(self) -> None:
         session_id = self._create_session()

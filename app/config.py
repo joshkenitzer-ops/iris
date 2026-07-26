@@ -148,3 +148,16 @@ MAX_RESPONSE_TOKENS = int(os.environ.get("IRIS_MAX_RESPONSE_TOKENS", "32000"))
 # Per-user /chat rate limit: max calls within the rolling window.
 CHAT_RATE_LIMIT_CALLS = 30
 CHAT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
+
+# How long the /chat SSE stream can go with no new event before it
+# sends a bare ": heartbeat" comment line to keep the connection alive.
+# A single slow model call (a HYBRID check the model is deliberating
+# over, or a long final response) can go multiple minutes with nothing
+# new to tell the client - confirmed 2026-07-26: the server kept
+# working with no error logged, but the browser's connection to it was
+# dropped anyway, almost certainly by an intermediary (Render's proxy,
+# a corporate network) treating the silence as a dead connection.
+# Comment lines are invisible to the SSE event parser (it only looks
+# for "data: " lines), so this is pure keep-alive, not a new event
+# type the frontend needs to handle.
+SSE_HEARTBEAT_INTERVAL_SECONDS = int(os.environ.get("IRIS_SSE_HEARTBEAT_INTERVAL_SECONDS", "15"))

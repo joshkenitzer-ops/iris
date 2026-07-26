@@ -29,6 +29,7 @@ import base64
 import json
 import logging
 import os
+import queue
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -50,6 +51,7 @@ from app.config import (
     MAX_MESSAGE_CHARS,
     MAX_TRANSCRIPT_MESSAGES,
     MAX_UPLOAD_BYTES,
+    SSE_HEARTBEAT_INTERVAL_SECONDS,
 )
 from app.enforcement import registry
 from app.gates import (
@@ -671,27 +673,69 @@ def chat(
         # this protects is per turn, not per network round trip.
         with lock:
             session.append_messages([{"role": "user", "content": body.message}])
-            try:
-                for event in stream_turn(
-                    spec_text=_get_spec_text(),
-                    messages=list(session.messages),
-                    session=session,
-                    tool_ids=body.tool_ids,
-                ):
-                    if event["type"] == "done":
-                        session.messages = event["messages"][-MAX_TRANSCRIPT_MESSAGES:]
-                        store.save(session)
-                        yield _sse_event({"type": "done", "text": event["text"]})
-                    else:
-                        yield _sse_event(event)
-            except Exception:  # noqa: BLE001
-                # A safety net for anything stream_turn doesn't already
-                # turn into a structured "error" event. Logged in full;
-                # the client gets the same generic message main.py's
-                # top-level handler already uses for everything else,
-                # never exception detail (S3).
-                logger.exception("Unhandled exception mid-stream for session %s", session_id)
-                yield _sse_event({"type": "error", "detail": "Something went wrong on Iris's end. Try again in a moment."})
+
+            # stream_turn is a plain synchronous generator, and a
+            # single slow model call inside it (a HYBRID check the
+            # model is deliberating over, a long final response) can
+            # run multiple minutes with nothing new to yield. Iterating
+            # it directly here means the SSE connection goes silent for
+            # that whole stretch - confirmed 2026-07-26: the server
+            # kept working with no error logged, but the browser's
+            # connection was dropped anyway, almost certainly by an
+            # intermediary (Render's proxy, a corporate network)
+            # treating the silence as a dead connection.
+            #
+            # Running the real work on a background thread and polling
+            # a queue with a timeout lets this generator send a bare
+            # SSE comment on every gap longer than
+            # SSE_HEARTBEAT_INTERVAL_SECONDS. Comment lines are
+            # invisible to the client's event parser (it only looks for
+            # "data: " lines), so this is pure keep-alive, not a new
+            # event type the frontend needs to know about.
+            event_queue = queue.Queue()
+            _WORKER_DONE = object()
+
+            def _drive_stream_turn() -> None:
+                try:
+                    for event in stream_turn(
+                        spec_text=_get_spec_text(),
+                        messages=list(session.messages),
+                        session=session,
+                        tool_ids=body.tool_ids,
+                    ):
+                        event_queue.put(("event", event))
+                except Exception:  # noqa: BLE001
+                    # A safety net for anything stream_turn doesn't
+                    # already turn into a structured "error" event.
+                    # Logged in full; the client gets the same generic
+                    # message main.py's top-level handler already uses
+                    # for everything else, never exception detail (S3).
+                    logger.exception("Unhandled exception mid-stream for session %s", session_id)
+                    event_queue.put(("crashed", None))
+                finally:
+                    event_queue.put((_WORKER_DONE, None))
+
+            threading.Thread(target=_drive_stream_turn, daemon=True).start()
+
+            while True:
+                try:
+                    kind, event = event_queue.get(timeout=SSE_HEARTBEAT_INTERVAL_SECONDS)
+                except queue.Empty:
+                    yield ": heartbeat\n\n"
+                    continue
+
+                if kind is _WORKER_DONE:
+                    break
+                if kind == "crashed":
+                    yield _sse_event({"type": "error", "detail": "Something went wrong on Iris's end. Try again in a moment."})
+                    continue
+
+                if event["type"] == "done":
+                    session.messages = event["messages"][-MAX_TRANSCRIPT_MESSAGES:]
+                    store.save(session)
+                    yield _sse_event({"type": "done", "text": event["text"]})
+                else:
+                    yield _sse_event(event)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
