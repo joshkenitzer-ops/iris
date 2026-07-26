@@ -109,6 +109,33 @@ async function apiFetch(path, options) {
   return fetch(path, Object.assign({}, options, { headers: headers }));
 }
 
+async function withSessionRetry(makeRequest) {
+  /* The server's session store is in memory on a single instance, so
+     every deploy, restart, or idle-eviction destroys every live
+     session. bootstrapSession() handles that at page load, but a
+     session can just as easily vanish mid-conversation while the tab
+     sits open, and until now that surfaced as a dead-end 404 with no
+     way forward short of a manual reload.
+
+     Recovering here rather than only at boot is the right layer: any
+     session-scoped call can hit it. The user is told plainly that
+     context was lost rather than being left to wonder why the
+     assistant forgot everything, since a silent recovery would be
+     worse than the error it replaces. */
+  let response = await makeRequest(currentSessionId);
+  if (response.status !== 404) {
+    return response;
+  }
+  currentSessionId = await createNewSession();
+  appendMessage(
+    "system",
+    "That session had expired, most likely because the server restarted. " +
+      "Started a fresh one and retried, but the earlier conversation is gone. " +
+      "Re-attach any file you had uploaded."
+  );
+  return makeRequest(currentSessionId);
+}
+
 // ---------------------------------------------------------------------------
 // Session bootstrap: reuse a saved session if it still exists, else create
 // one. The transcript itself is not restored into the message list on
@@ -213,9 +240,11 @@ async function handleFileSelected(event) {
 
   setComposerDisabled(true);
   try {
-    const response = await apiFetch("/sessions/" + currentSessionId + "/attachments", {
-      method: "POST",
-      body: formData,
+    const response = await withSessionRetry(function (sessionId) {
+      return apiFetch("/sessions/" + sessionId + "/attachments", {
+        method: "POST",
+        body: formData,
+      });
     });
     if (!response.ok) {
       const body = await safeJson(response);
@@ -272,10 +301,12 @@ async function sendMessage() {
   showThinking(true);
 
   try {
-    const response = await apiFetch("/sessions/" + currentSessionId + "/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: messageToSend }),
+    const response = await withSessionRetry(function (sessionId) {
+      return apiFetch("/sessions/" + sessionId + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: messageToSend }),
+      });
     });
     showThinking(false);
     if (response.ok) {

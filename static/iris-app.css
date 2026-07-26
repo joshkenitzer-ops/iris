@@ -123,19 +123,24 @@ body {
   padding: var(--lore-space-6);
   display: flex;
   flex-direction: column;
-  /* A short conversation should sit near the composer, the way every
-     reference chat UI (Slack, iMessage, Claude, ChatGPT) behaves, not
-     stranded at the top with an empty void below it. Once content
-     overflows, this has no effect beyond the normal scroll behavior:
-     newest messages stay anchored near the bottom, older ones scroll
-     up out of view at the top, which is exactly correct. */
-  justify-content: flex-end;
+  /* Deliberately NOT justify-content: flex-end. That was tried, and
+     it breaks scrolling outright: on a flex container that scrolls,
+     content overflowing past the top edge becomes unreachable, so a
+     long conversation gets clipped with no way to scroll back up to
+     it. The bottom-anchoring it was meant to provide is done instead
+     by margin-top:auto on .message-list below, which collapses to 0
+     once content overflows and leaves normal scrolling intact. */
 }
 
 .message-list {
   max-width: var(--iris-work-width);
   width: 100%;
   margin: 0 auto;
+  /* Pushes a short conversation down near the composer instead of
+     leaving it stranded at the top. Unlike justify-content on the
+     scroll container, this resolves to 0 once content overflows, so
+     scrolling back up keeps working. */
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: var(--lore-space-4);
