@@ -61,7 +61,30 @@ PAGE_ESTIMATE = {
 
 # Model id. Env-overridable so a model change does not require a
 # redeploy of code (N5, pre-deploy review 2026-07-25).
-MODEL = os.environ.get("IRIS_MODEL", "claude-sonnet-5")
+#
+# Changed from claude-sonnet-5 to claude-sonnet-4-6 on 2026-07-26.
+# Sonnet 5 was never a deliberate choice for this workload - it just
+# fell out of picking "the newest model" with no other setting
+# considered. Josh's actual resume work was validated against Sonnet
+# 4.6 at Medium effort; Sonnet 5 runs adaptive thinking on by default
+# (no explicit `effort` was ever set), which is what caused both the
+# truncation and the SDK timeout incidents earlier this same day.
+# Iris's workload (tool orchestration and writing judgment against a
+# harness that already does the deterministic checking) doesn't call
+# for frontier reasoning, and Sonnet 4.6 doesn't spend any tokens on
+# thinking unless explicitly asked to. Not deprecated, still fully
+# current as of this writing.
+MODEL = os.environ.get("IRIS_MODEL", "claude-sonnet-4-6")
+
+# Effort: trades response thoroughness for token/cost efficiency,
+# passed as output_config={"effort": EFFORT} on every call (see
+# platform.claude.com/docs/en/build-with-claude/effort - it is nested
+# under output_config, not a bare top-level parameter). Set explicitly
+# rather than left to whatever a given model's own default happens to
+# be, so a future model swap can't silently change this again the way
+# switching to Sonnet 5 did. "medium" matches the effort level Josh's
+# resume work was actually validated against.
+EFFORT = os.environ.get("IRIS_EFFORT", "medium")
 
 # ---------------------------------------------------------------------------
 # Runtime resource limits (B4/B5, pre-deploy review 2026-07-25).

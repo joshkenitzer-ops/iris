@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 
 import anthropic
 
-from app.config import MAX_RESPONSE_TOKENS, MODEL
+from app.config import EFFORT, MAX_RESPONSE_TOKENS, MODEL
 from app.enforcement import registry
 from app.session import Session
 
@@ -161,6 +161,7 @@ def run_turn(
                 ],
                 tools=tools,
                 messages=working_messages,
+                output_config={"effort": EFFORT},
             ) as message_stream:
                 response = message_stream.get_final_message()
         except anthropic.APIError as exc:
@@ -348,6 +349,7 @@ def stream_turn(
                 ],
                 tools=tools,
                 messages=working_messages,
+                output_config={"effort": EFFORT},
             ) as message_stream:
                 response = message_stream.get_final_message()
         except anthropic.APIError as exc:
