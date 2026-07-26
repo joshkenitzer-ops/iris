@@ -17,6 +17,21 @@ html, body {
   height: 100%;
 }
 
+/* Every element toggled via the `hidden` attribute (#boot-loading,
+   #sign-in-container, #app, and a few smaller ones) also has its own
+   class setting `display` for when it's visible. A plain class
+   selector and the browser's built-in `[hidden] { display: none }`
+   rule have identical specificity, and this stylesheet loads after
+   the browser's default one, so without this override the class's
+   `display` wins the tie every time and `hidden` does nothing: the
+   boot screen was staying rendered at full height even after JS set
+   hidden=true, pushing the real app below the fold. This rule fixes
+   that for every element in the page, not just the three found so
+   far. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   display: flex;
   flex-direction: column;

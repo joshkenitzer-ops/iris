@@ -88,9 +88,16 @@ async function apiFetch(path, options) {
 // ---------------------------------------------------------------------------
 
 async function initApp() {
-  currentSessionId = await bootstrapSession();
   wireComposer();
   document.getElementById("new-session-btn").addEventListener("click", startNewSession);
+  try {
+    currentSessionId = await bootstrapSession();
+  } catch (err) {
+    appendMessage(
+      "error",
+      "Could not start a session. Refresh the page to try again; if it keeps happening, the backend may be down."
+    );
+  }
 }
 
 async function bootstrapSession() {
@@ -107,15 +114,30 @@ async function bootstrapSession() {
 
 async function createNewSession() {
   const response = await apiFetch("/sessions", { method: "POST" });
+  if (!response.ok) {
+    throw new Error("Failed to create a session (status " + response.status + ")");
+  }
   const body = await response.json();
   localStorage.setItem(SESSION_STORAGE_KEY, body.session_id);
   return body.session_id;
 }
 
 async function startNewSession() {
-  clearAttachmentChip();
-  document.getElementById("message-list").innerHTML = "";
-  currentSessionId = await createNewSession();
+  // Previously had no error handling and no success feedback, so a
+  // failure was silent and a success looked identical to nothing
+  // happening at all: both read as "the button does nothing."
+  const btn = document.getElementById("new-session-btn");
+  btn.disabled = true;
+  try {
+    clearAttachmentChip();
+    document.getElementById("message-list").innerHTML = "";
+    currentSessionId = await createNewSession();
+    appendMessage("system", "Started a new session.");
+  } catch (err) {
+    appendMessage("error", "Could not start a new session. Check your connection and try again.");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
