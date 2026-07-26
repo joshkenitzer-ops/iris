@@ -97,7 +97,10 @@ EFFORT = os.environ.get("IRIS_EFFORT", "medium")
 # ---------------------------------------------------------------------------
 
 # Longest single user message accepted by /chat.
-MAX_MESSAGE_CHARS = 20_000
+MAX_MESSAGE_CHARS = 40_000  # raised from 20_000 — a full master resume
+# paste (tested at ~31K chars) was hitting the old limit and returning
+# the generic "something went wrong" error. 40K covers large resumes
+# with headroom for JD pastes alongside them.
 
 # Longest extracted-document text handed to the model in one tool result.
 # A resume or JD well over this is far more likely to be a paste error or

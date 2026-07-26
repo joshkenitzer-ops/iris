@@ -492,6 +492,8 @@ async function handleChatError(response) {
 
   if (response.status === 429) {
     appendMessage("system", "You're sending messages faster than Iris can keep up. Wait a bit and try again.");
+  } else if (response.status === 422) {
+    appendMessage("error", "That message is too long to send directly. Attach your resume as a file using the + button instead of pasting it.");
   } else if (response.status === 400) {
     appendMessage("error", detail || "That request was not valid.");
   } else if (response.status === 401) {
