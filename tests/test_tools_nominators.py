@@ -12,7 +12,7 @@ def _session_with_cached_text(text: str):
     stash the raw text on the attachment so later HYBRID checks can
     resolve it by attachment_id instead of the model pasting it back."""
     session = Session(session_id="s", user_id="u")
-    attachment = session.add_attachment(filename="resume.docx", file_type="docx", file_base64="")
+    attachment = session.add_attachment(filename="resume.docx", file_type="docx", data=b"")
     attachment.extracted_text = text
     return session, attachment.id
 
@@ -55,7 +55,7 @@ class TestNominateRepeatedOpenerCandidates(unittest.TestCase):
 
     def test_attachment_without_cached_extraction_yet_is_a_clean_error(self) -> None:
         session = Session(session_id="s", user_id="u")
-        attachment = session.add_attachment(filename="resume.docx", file_type="docx", file_base64="")
+        attachment = session.add_attachment(filename="resume.docx", file_type="docx", data=b"")
         result = nominate_repeated_opener_candidates(attachment_id=attachment.id, session=session)
         self.assertFalse(result.passed)
         self.assertIn("No cached extracted text", result.findings[0]["issue"])

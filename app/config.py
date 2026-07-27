@@ -119,14 +119,41 @@ MAX_TRANSCRIPT_MESSAGES = 100
 # abandoned session is retained for the life of the process otherwise.
 SESSION_TTL_SECONDS = 8 * 60 * 60
 
-# Hard ceiling on concurrently stored sessions per user.
-MAX_SESSIONS_PER_USER = 20
+# Hard ceiling on concurrently stored sessions per user. Lowered from 20
+# on 2026-07-27: sessions are cheap except for the attachment bytes they
+# hold, and 20 multiplied against the per-session attachment budget below
+# into a per-user worst case far larger than the instance has RAM for.
+# Eight concurrent in-flight application pipelines per user is already
+# generous; least-recently-used sessions are evicted past this.
+MAX_SESSIONS_PER_USER = 8
 
-# Uploaded file (docx/pdf) limits. A resume or JD file has no business
-# being large; a very large upload is far more likely to be the wrong
-# file or an abuse attempt than a real document.
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+# Uploaded file (docx/pdf) limits.
+#
+# These bound REAL MEMORY on a single always-on instance, not just
+# request size: attachment bytes live in the in-memory session store
+# until the session expires (SESSION_TTL_SECONDS) or is evicted. Before
+# 2026-07-27 only per-file size and per-session COUNT were capped, which
+# multiplied out to ~2.8 GB of attachments for one user against a
+# 512 MB Render Starter instance. Roughly four max-size uploads was an
+# out-of-memory restart, and because the store is in-memory, that
+# restart would have dropped every other user's live session with it.
+#
+# Three layers now, because any one of them alone leaves a hole:
+#   - per file: a single upload cannot be enormous
+#   - per session, in BYTES: many medium files cannot add up to the same
+#     thing, which a count-only cap allowed
+#   - per user: bounded by MAX_SESSIONS_PER_USER above
+# Worst case per user is now MAX_SESSIONS_PER_USER * the per-session
+# byte budget, ~96 MB, rather than ~2.8 GB.
+#
+# 6 MB per file is deliberately not smaller: the performance-document
+# entry path (spec Phase 0) accepts multi-hundred-page review exports,
+# and a text-heavy PDF that size runs a few MB. Sizing this below a real
+# perf doc would break the feature to save memory the byte budget
+# already bounds.
+MAX_UPLOAD_BYTES = 6 * 1024 * 1024  # 6 MB
 MAX_ATTACHMENTS_PER_SESSION = 10  # oldest evicted first past this
+MAX_ATTACHMENT_BYTES_PER_SESSION = 12 * 1024 * 1024  # 12 MB, oldest evicted first past this
 
 # Maximum tokens in a single model response. History: 4096 -> 8192 ->
 # 16000 on 2026-07-26, each bump chasing truncation on real audits.

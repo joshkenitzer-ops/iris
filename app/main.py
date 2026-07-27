@@ -556,7 +556,7 @@ async def upload_attachment(
     attachment = session.add_attachment(
         filename=filename,
         file_type=file_type,
-        file_base64=base64.b64encode(raw).decode("ascii"),
+        data=raw,
     )
     store.save(session)
     return {"attachment_id": attachment.id, "filename": attachment.filename, "file_type": attachment.file_type}

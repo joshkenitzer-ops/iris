@@ -72,13 +72,9 @@ def ingest_document(attachment_id: str, session: Session) -> ToolResult:
             ],
         )
 
-    try:
-        raw = base64.b64decode(attachment.file_base64)
-    except Exception:
-        return ToolResult(
-            passed=False,
-            findings=[{"severity": "Critical", "issue": "Stored attachment is not valid base64.", "fix": "Upload the file again."}],
-        )
+    # Raw bytes as uploaded; no decode step since 2026-07-27, when
+    # attachments stopped being stored base64-inflated.
+    raw = attachment.data
 
     if attachment.file_type == "docx":
         return _ingest_docx(raw, attachment)
@@ -93,7 +89,27 @@ def ingest_document(attachment_id: str, session: Session) -> ToolResult:
 def _ingest_docx(raw: bytes, attachment: Attachment) -> ToolResult:
     from docx import Document  # already a hard dependency, via app.tools.docx_render/docx_checks
 
-    document = Document(io.BytesIO(raw))
+    # A truncated or mislabeled upload raises out of python-docx (a
+    # .docx is a zip, so BadZipFile is the usual shape). Unguarded, that
+    # reaches the user as an opaque "tool failed to run" with nothing
+    # actionable in it. Until 2026-07-27 the equivalent guard was the
+    # base64 decode this replaced; the failure mode outlived the
+    # encoding.
+    try:
+        document = Document(io.BytesIO(raw))
+    except Exception:  # noqa: BLE001 - any parse failure is the same story to the user
+        logger.warning("ingest_document (docx): file could not be parsed as a .docx")
+        return ToolResult(
+            passed=False,
+            findings=[
+                {
+                    "severity": "Critical",
+                    "issue": f"'{attachment.filename}' could not be read as a Word document.",
+                    "fix": "The file may be corrupt, incompletely uploaded, or not actually a .docx. Try uploading it again.",
+                }
+            ],
+        )
+
     paragraphs = [p.text for p in document.paragraphs if p.text.strip()]
     table_count = len(document.tables)
     for table in document.tables:
@@ -153,8 +169,24 @@ def _ingest_pdf(raw: bytes, attachment: Attachment) -> ToolResult:
             ],
         )
 
-    reader = PdfReader(io.BytesIO(raw))
-    pages_text = [page.extract_text() or "" for page in reader.pages]
+    # Same reasoning as _ingest_docx above: a corrupt or mislabeled PDF
+    # raises out of pypdf, and an unguarded raise reaches the user as an
+    # opaque tool failure instead of something they can act on.
+    try:
+        reader = PdfReader(io.BytesIO(raw))
+        pages_text = [page.extract_text() or "" for page in reader.pages]
+    except Exception:  # noqa: BLE001 - any parse failure is the same story to the user
+        logger.warning("ingest_document (pdf): file could not be parsed as a PDF")
+        return ToolResult(
+            passed=False,
+            findings=[
+                {
+                    "severity": "Critical",
+                    "issue": f"'{attachment.filename}' could not be read as a PDF.",
+                    "fix": "The file may be corrupt, incompletely uploaded, or not actually a PDF. Try uploading it again.",
+                }
+            ],
+        )
     text = "\n".join(pages_text)
 
     logger.info(
@@ -705,7 +737,13 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
                 }],
             )
         if "docx_base64" not in inputs:
-            inputs["docx_base64"] = attachment.file_base64
+            # The one place base64 is still genuinely required: the
+            # docx-check tools declare `docx_base64` in their
+            # model-facing schemas. Encoding here keeps that contract
+            # unchanged while the stored copy stays raw bytes, so the
+            # inflated string is transient per call rather than retained
+            # for the life of the session (2026-07-27).
+            inputs["docx_base64"] = base64.b64encode(attachment.data).decode("ascii")
         if "text" not in inputs and attachment.extracted_text is not None:
             inputs["text"] = attachment.extracted_text
 

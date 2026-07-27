@@ -32,6 +32,7 @@ from enum import IntEnum
 from typing import Dict, List, Optional, Tuple
 
 from app.config import (
+    MAX_ATTACHMENT_BYTES_PER_SESSION,
     MAX_ATTACHMENTS_PER_SESSION,
     MAX_SESSIONS_PER_USER,
     MAX_TRANSCRIPT_MESSAGES,
@@ -138,16 +139,30 @@ class LimitOverride:
 class Attachment:
     """An uploaded file, stored server-side. The model references this
     by id when calling ingest_document (T-0.1); it never receives the
-    raw base64 bytes as a tool argument, since typing tens of
-    thousands of characters into a tool call just to name a file is
-    exactly the token waste T-0.1's own docstring warns against."""
+    raw bytes as a tool argument, since typing tens of thousands of
+    characters into a tool call just to name a file is exactly the
+    token waste T-0.1's own docstring warns against.
+
+    `data` holds raw bytes, not base64. It was base64 until 2026-07-27,
+    which inflated every stored file by a third for no benefit: the one
+    consumer that genuinely needs base64 (the docx_base64 tool argument
+    the model-facing check schemas declare) encodes at that boundary
+    instead, and that string is transient rather than retained for the
+    life of the session."""
 
     id: str
     filename: str
     file_type: str  # "docx" or "pdf"
-    file_base64: str
+    data: bytes
     uploaded_at: float = field(default_factory=time.monotonic)
     extracted_text: Optional[str] = None  # T-0.1: cached raw text, set once ingest_document succeeds
+
+    def byte_size(self) -> int:
+        """Bytes this attachment holds in memory, including its cached
+        extracted text. Both are real retained memory, so a budget that
+        counted only the file would undercount a large text-heavy PDF
+        by the size of everything extracted out of it."""
+        return len(self.data) + (len(self.extracted_text.encode("utf-8")) if self.extracted_text else 0)
 
 
 @dataclass
@@ -204,20 +219,41 @@ class Session:
     def get_rendered_file(self, file_id: str) -> Optional[RenderedFile]:
         return self.rendered_files.get(file_id)
 
-    def add_attachment(self, filename: str, file_type: str, file_base64: str) -> Attachment:
+    def attachment_bytes(self) -> int:
+        """Total memory currently held by this session's attachments."""
+        return sum(a.byte_size() for a in self.attachments.values())
+
+    def _evict_oldest_attachment(self) -> None:
+        oldest_id = min(self.attachments, key=lambda k: self.attachments[k].uploaded_at)
+        del self.attachments[oldest_id]
+
+    def add_attachment(self, filename: str, file_type: str, data: bytes) -> Attachment:
         """Stores an uploaded file and returns a reference the model
-        can cite by id in a tool call. Enforces
-        MAX_ATTACHMENTS_PER_SESSION by evicting the oldest attachment
-        first, the same policy SessionStore already applies to its own
-        per-user session quota."""
+        can cite by id in a tool call.
+
+        Two independent ceilings, both evicting oldest-first, the same
+        policy SessionStore already applies to its own per-user session
+        quota. The count cap alone was not enough: ten files just under
+        the per-file limit satisfied it while still holding far more
+        memory than the instance can spare, which is the hole the byte
+        budget closes (2026-07-27)."""
         if len(self.attachments) >= MAX_ATTACHMENTS_PER_SESSION:
-            oldest_id = min(self.attachments, key=lambda k: self.attachments[k].uploaded_at)
-            del self.attachments[oldest_id]
+            self._evict_oldest_attachment()
+
+        incoming = len(data)
+        # Evict until the newcomer fits. Guarded on a non-empty dict so a
+        # single file larger than the whole budget cannot spin here; the
+        # upload route rejects that case up front (MAX_UPLOAD_BYTES is
+        # well under the session budget), and if it ever changed, storing
+        # one oversized file beats looping forever.
+        while self.attachments and self.attachment_bytes() + incoming > MAX_ATTACHMENT_BYTES_PER_SESSION:
+            self._evict_oldest_attachment()
+
         attachment = Attachment(
             id=str(uuid.uuid4()),
             filename=filename,
             file_type=file_type,
-            file_base64=file_base64,
+            data=data,
         )
         self.attachments[attachment.id] = attachment
         return attachment

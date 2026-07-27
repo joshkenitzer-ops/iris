@@ -136,7 +136,7 @@ def _session_with_docx_attachment(paragraphs) -> tuple:
     doc.save(buf)
     session = Session(session_id="s", user_id="u")
     attachment = session.add_attachment(
-        filename="resume.docx", file_type="docx", file_base64=base64.b64encode(buf.getvalue()).decode()
+        filename="resume.docx", file_type="docx", data=buf.getvalue()
     )
     return session, attachment.id
 

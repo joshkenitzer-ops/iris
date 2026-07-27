@@ -72,13 +72,13 @@ def _blank_pdf_bytes() -> bytes:
 
 
 def _session_with_attachment(filename: str, file_type: str, raw: bytes):
-    """Mirrors what POST /sessions/{id}/attachments does: base64-encode
-    once, server-side, and hand the model back only a short id -
-    never the bytes themselves as a tool argument (see
+    """Mirrors what POST /sessions/{id}/attachments does: store the raw
+    bytes server-side and hand the model back only a short id - never
+    the bytes themselves as a tool argument (see
     app.session.Attachment)."""
     session = Session(session_id="s", user_id="u")
     attachment = session.add_attachment(
-        filename=filename, file_type=file_type, file_base64=base64.b64encode(raw).decode()
+        filename=filename, file_type=file_type, data=raw
     )
     return session, attachment.id
 
@@ -151,12 +151,22 @@ class TestIngestDocumentInputHandling(unittest.TestCase):
         self.assertEqual(result.findings[0]["severity"], "Critical")
         self.assertIn("No attachment", result.findings[0]["issue"])
 
-    def test_corrupted_stored_base64_is_a_critical_finding_not_a_crash(self) -> None:
-        """The model never authors the base64 itself, so this shouldn't
-        happen in practice; still, a corrupted stored record must fail
-        cleanly, not throw, in case one ever gets in some other way."""
+    def test_corrupt_docx_bytes_are_a_critical_finding_not_a_crash(self) -> None:
+        """Replaces the corrupted-stored-base64 test that guarded this
+        same property until attachments stopped being stored base64
+        (2026-07-27). The encoding changed; a truncated or mislabeled
+        upload must still fail cleanly with something the user can act
+        on, rather than throwing an opaque tool error."""
         session = Session(session_id="s", user_id="u")
-        attachment = session.add_attachment(filename="x.docx", file_type="docx", file_base64="not-valid-base64!!!")
+        attachment = session.add_attachment(filename="x.docx", file_type="docx", data=b"not-a-real-docx!!!")
+        result = ingest_document(attachment.id, session=session)
+        self.assertFalse(result.passed)
+        self.assertEqual(result.findings[0]["severity"], "Critical")
+        self.assertIn("x.docx", result.findings[0]["issue"])
+
+    def test_corrupt_pdf_bytes_are_a_critical_finding_not_a_crash(self) -> None:
+        session = Session(session_id="s", user_id="u")
+        attachment = session.add_attachment(filename="x.pdf", file_type="pdf", data=b"not-a-real-pdf!!!")
         result = ingest_document(attachment.id, session=session)
         self.assertFalse(result.passed)
         self.assertEqual(result.findings[0]["severity"], "Critical")
@@ -198,15 +208,15 @@ class TestSessionAttachments(unittest.TestCase):
 
     def test_each_attachment_gets_a_distinct_id(self) -> None:
         session = Session(session_id="s", user_id="u")
-        a = session.add_attachment("a.docx", "docx", "aGVsbG8=")
-        b = session.add_attachment("b.docx", "docx", "aGVsbG8=")
+        a = session.add_attachment("a.docx", "docx", b"hello")
+        b = session.add_attachment("b.docx", "docx", b"hello")
         self.assertNotEqual(a.id, b.id)
 
     def test_quota_evicts_the_oldest_attachment_first(self) -> None:
         from app.config import MAX_ATTACHMENTS_PER_SESSION
 
         session = Session(session_id="s", user_id="u")
-        ids = [session.add_attachment(f"f{i}.docx", "docx", "aGVsbG8=").id for i in range(MAX_ATTACHMENTS_PER_SESSION + 5)]
+        ids = [session.add_attachment(f"f{i}.docx", "docx", b"hello").id for i in range(MAX_ATTACHMENTS_PER_SESSION + 5)]
         self.assertLessEqual(len(session.attachments), MAX_ATTACHMENTS_PER_SESSION)
         self.assertNotIn(ids[0], session.attachments)  # oldest, evicted
         self.assertIn(ids[-1], session.attachments)  # newest, kept
@@ -214,8 +224,57 @@ class TestSessionAttachments(unittest.TestCase):
     def test_attachments_do_not_leak_between_sessions(self) -> None:
         session_a = Session(session_id="a", user_id="u1")
         session_b = Session(session_id="b", user_id="u2")
-        attachment = session_a.add_attachment("resume.docx", "docx", "aGVsbG8=")
+        attachment = session_a.add_attachment("resume.docx", "docx", b"hello")
         self.assertIsNone(session_b.get_attachment(attachment.id))
+
+
+class TestSessionAttachmentByteBudget(unittest.TestCase):
+    """The count cap alone let a session hold far more memory than the
+    instance can spare: ten files just under the per-file limit satisfied
+    it while adding up to ~140 MB against a 512 MB box. These pin the
+    byte budget that closes that hole (2026-07-27)."""
+
+    def test_byte_budget_evicts_oldest_until_the_newcomer_fits(self) -> None:
+        from app.config import MAX_ATTACHMENT_BYTES_PER_SESSION
+
+        session = Session(session_id="s", user_id="u")
+        chunk = MAX_ATTACHMENT_BYTES_PER_SESSION // 4
+        ids = [session.add_attachment(f"f{i}.docx", "docx", b"x" * chunk).id for i in range(6)]
+
+        self.assertLessEqual(session.attachment_bytes(), MAX_ATTACHMENT_BYTES_PER_SESSION)
+        self.assertNotIn(ids[0], session.attachments)  # oldest, evicted
+        self.assertIn(ids[-1], session.attachments)  # newest, always kept
+
+    def test_budget_holds_under_the_count_cap(self) -> None:
+        """Well under MAX_ATTACHMENTS_PER_SESSION by count, still over
+        budget by bytes: the case a count-only cap missed entirely."""
+        from app.config import MAX_ATTACHMENT_BYTES_PER_SESSION, MAX_ATTACHMENTS_PER_SESSION
+
+        session = Session(session_id="s", user_id="u")
+        for i in range(4):
+            session.add_attachment(f"f{i}.docx", "docx", b"x" * (MAX_ATTACHMENT_BYTES_PER_SESSION // 3))
+
+        self.assertLess(len(session.attachments), MAX_ATTACHMENTS_PER_SESSION)
+        self.assertLessEqual(session.attachment_bytes(), MAX_ATTACHMENT_BYTES_PER_SESSION)
+
+    def test_cached_extracted_text_counts_against_the_budget(self) -> None:
+        """A text-heavy PDF's extraction can rival the file itself; a
+        budget that counted only stored file bytes would undercount it."""
+        session = Session(session_id="s", user_id="u")
+        attachment = session.add_attachment("f.pdf", "pdf", b"x" * 1000)
+        before = session.attachment_bytes()
+        attachment.extracted_text = "y" * 5000
+        self.assertEqual(session.attachment_bytes(), before + 5000)
+
+    def test_a_single_attachment_is_always_stored(self) -> None:
+        """Eviction must not loop forever or drop the only file when one
+        upload is large relative to the budget."""
+        from app.config import MAX_ATTACHMENT_BYTES_PER_SESSION
+
+        session = Session(session_id="s", user_id="u")
+        attachment = session.add_attachment("big.pdf", "pdf", b"x" * (MAX_ATTACHMENT_BYTES_PER_SESSION + 1))
+        self.assertIn(attachment.id, session.attachments)
+        self.assertEqual(len(session.attachments), 1)
 
 
 class TestValidateStructuredIntakeForm(unittest.TestCase):
