@@ -103,9 +103,14 @@ MAX_MESSAGE_CHARS = 40_000  # raised from 20_000 — a full master resume
 # with headroom for JD pastes alongside them.
 
 # Longest extracted-document text handed to the model in one tool result.
-# A resume or JD well over this is far more likely to be a paste error or
-# an injection payload than a real document (see app/untrusted_text.py).
-MAX_INGEST_TEXT_CHARS = 100_000
+# Raised from 100_000 (2026-07-27): a multi-year performance review export
+# (the "performance document" entry path, spec Phase 0) is a real document
+# that can legitimately run several hundred pages, and 100K chars was
+# truncating well inside that range. A resume or JD anywhere near even this
+# larger cap is still far more likely to be a paste error or an injection
+# payload than a real document (see app/untrusted_text.py, which truncates
+# and says so rather than silently dropping the excess either way).
+MAX_INGEST_TEXT_CHARS = 400_000
 
 # Turns retained in a session transcript. Oldest are dropped first.
 MAX_TRANSCRIPT_MESSAGES = 100
