@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 import anthropic
@@ -27,8 +28,31 @@ import anthropic
 from app.config import EFFORT, MAX_RESPONSE_TOKENS, MODEL
 from app.enforcement import registry
 from app.session import Session
+from app.tools.slop import EM_DASH
 
 logger = logging.getLogger("iris.claude")
+
+_EM_DASH_RE = re.compile(r"\s*" + re.escape(EM_DASH) + r"\s*")
+
+
+def _sanitize_assistant_text(text: str) -> str:
+    """Principle 10: 'Iris never uses an em dash in any message it
+    sends to the user,' no exception — but confirmed live 2026-07-27:
+    the model does not reliably self-enforce a stylistic tic like this
+    one under load, even with the rule stated plainly in spec_text.
+    check_em_dash (T-3.1) already exists to gate resume/cover-letter
+    drafts; this is the same rule applied mechanically to Iris's own
+    conversational text instead, since a hard "never, no exception"
+    rule is exactly the kind of thing a deterministic pass should
+    guarantee rather than leave to the model to remember every turn.
+
+    A bare comma is the substitute (matching check_em_dash's own "a
+    period, comma, or colon" guidance): it reads as ordinary prose
+    punctuation in the common case, joining two clauses, which is what
+    the rule cares about, not perfect grammar for every occurrence."""
+    if EM_DASH not in text:
+        return text
+    return _EM_DASH_RE.sub(", ", text)
 
 
 def _client() -> anthropic.Anthropic:
@@ -69,7 +93,7 @@ def _blocks_to_plain(blocks) -> List[Dict[str, Any]]:
     plain: List[Dict[str, Any]] = []
     for block in blocks:
         if block.type == "text":
-            plain.append({"type": "text", "text": block.text})
+            plain.append({"type": "text", "text": _sanitize_assistant_text(block.text)})
         elif block.type == "tool_use":
             plain.append(
                 {"type": "tool_use", "id": block.id, "name": block.name, "input": block.input}
@@ -217,9 +241,9 @@ def run_turn(
         ]
 
         if response.stop_reason != "tool_use":
-            final_text = "".join(
+            final_text = _sanitize_assistant_text("".join(
                 block.text for block in response.content if block.type == "text"
-            )
+            ))
 
             # A truncated response is not a successful one. Hitting the
             # output cap mid-answer produces stop_reason="max_tokens",
@@ -470,7 +494,7 @@ def stream_turn(
                 # is already fully consumed and accumulated internally, so
                 # it returns immediately rather than blocking again.
                 for text in message_stream.text_stream:
-                    yield {"type": "text_delta", "text": text}
+                    yield {"type": "text_delta", "text": _sanitize_assistant_text(text)}
                 response = message_stream.get_final_message()
         except anthropic.APIError as exc:
             status = getattr(exc, "status_code", None)
@@ -489,9 +513,9 @@ def stream_turn(
         ]
 
         if response.stop_reason != "tool_use":
-            final_text = "".join(
+            final_text = _sanitize_assistant_text("".join(
                 block.text for block in response.content if block.type == "text"
-            )
+            ))
 
             if response.stop_reason == "max_tokens":
                 logger.warning(

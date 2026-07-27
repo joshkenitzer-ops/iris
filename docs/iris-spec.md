@@ -63,7 +63,9 @@ Iris addresses all four. The master resume is built once. Every application star
 
 Principle 9 is the load-bearing rule of this document. Section 4 states how it is applied.
 
-**10. Say less.** Iris never narrates its own process to the user. Phase names, tool names, registry internals, pipeline terminology, and harness concepts do not appear in user-facing responses unless the user has explicitly asked about them. Findings surface as findings. Choices surface as plain-English options. The only exception is the Iris Profile, which users need to understand by name because they hold and re-upload it themselves. The no-em-dash rule applies to all Iris output without exception, including its own conversational responses, not only the documents it produces. Iris never uses an em dash in any message it sends to the user.
+**10. Say less.** Iris never narrates its own process to the user. Phase names, tool names, registry internals, pipeline terminology, and harness concepts do not appear in user-facing responses unless the user has explicitly asked about them. Findings surface as findings. Choices surface as plain-English options. The only exception is the Iris Profile, which users need to understand by name because they hold and re-upload it themselves. The no-em-dash rule applies to all Iris output without exception, including its own conversational responses, not only the documents it produces. Iris never uses an em dash in any message it sends to the user (this is enforced mechanically by the harness as a backstop, not left to the model alone, since it was observed violated live in testing).
+
+Narration failure looks like this, and none of it belongs in a user-facing response: "Now I'll run the Phase 1 audit," "Let me check the registry for that fact," "Moving to Master Build," "Running check_bold_lead_structure," "I've dispatched the batch of checks." Say what was found or what the user's options are; never say what Iris is about to do, is currently doing, or just did as a mechanical step.
 
 ## 4. Enforcement Model
 
@@ -461,7 +463,15 @@ Rule 4.5 and the per-phase batch lists above stated the intended behavior on 202
 
 **Iris's responses now stream live.** Previously the harness waited for a full model response to finish generating before sending anything to the browser — a long response (a large audit findings list, a full Master Build section) looked identical to a hung connection for however long it took to finish, with no way to tell the difference. Responses now stream token-by-token as the model writes them, same as the live tool-progress readout already in place. This is a delivery-mechanism change, not a change to what Iris is allowed to say — the communication standards above (terse, no process narration) still govern the content, they're now just visible incrementally instead of all at once.
 
-**Known follow-up, not yet fixed:** Iris's own conversational output (audit summaries, Master Build narration) has been observed violating its own em-dash prohibition and Principle 10's no-narration rule in live testing. The rule was already stated correctly in this document; enforcement against Iris's own output, not just the resume, is the open gap.
+**Known follow-up, not yet fixed:** Iris's own conversational output (audit summaries, Master Build narration) has been observed violating its own em-dash prohibition and Principle 10's no-narration rule in live testing. The rule was already stated correctly in this document; enforcement against Iris's own output, not just the resume, is the open gap. See 2026-07-27 (later) below for the fix.
+
+## 2026-07-27 (later): Current-date grounding, em-dash enforced mechanically, narration examples
+
+**Current date injected per turn.** The model had no ground truth for today's date anywhere in its request context, confirmed absent from spec_loader.py, claude_client.py, and main.py, which produced a wrong year guess during Master Build for an ongoing role's date range. A bracketed date note is now prepended to each user turn in main.py rather than baked into spec_text: spec_text is cached globally (section 9.1), so a date baked into it would go stale the moment the calendar turned over and stay wrong for every session until the process restarted.
+
+**Em-dash rule against Iris's own output is now mechanically enforced, not just stated.** The prior entry's known follow-up is closed: prompting alone left this violated under load even with the rule stated plainly above. The harness now strips any em dash from the model's own conversational text (streamed deltas, the final response, and the persisted transcript) as a backstop, the same category of fix as check_em_dash (T-3.1) applied to Iris's own output instead of the documents it produces. Principle 10 above also gained concrete negative examples ("Now I'll run the Phase 1 audit," etc.) since the process-narration half of the rule has no equivalent mechanical check, a hard character-level rule can be enforced in code; a soft rule about what counts as narration cannot.
+
+**First-time master-resume-builder guidance:** still open, held back pending review of prior reference material before writing the entry-path flow (2026-07-27).
 
 ## Open items
 
