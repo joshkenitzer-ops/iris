@@ -274,5 +274,113 @@ class TestRunBatchChecksAcceptsHybrid(unittest.TestCase):
         self.assertIn("call it separately", result.findings[0]["issue"])
 
 
+class TestRunBatchChecksAcrossLaterPhases(unittest.TestCase):
+    """Regression coverage for extending run_batch_checks' documented
+    batch lists past Phase 1: Phases 0, 2, 5, and 7 previously had no
+    batching guidance at all, and Phases 4/8 only listed part of their
+    spec-documented check set. Unlike Phase 1's uniform `text`/
+    `attachment_id` shape, most of these tools take different,
+    tool-specific keys (lead_text, bullets, headline_text, ...) in the
+    same shared inputs dict — this verifies dispatch_by_id's per-tool
+    signature filtering actually routes each key to the right tool
+    when several very differently-shaped tools share one batch call."""
+
+    def test_phase_0_batches_numeric_and_list_shaped_inputs_together(self) -> None:
+        session = Session(session_id="s", user_id="u")
+        result = run_batch_checks(
+            tool_ids=["T-0.2", "T-0.8"],
+            inputs={
+                # T-0.2 — numeric signals the model computed itself.
+                "ocr_confidence": 0.5,
+                "replacement_char_ratio": 0.0,
+                "role_blocks_with_dates": 4,
+                "date_parse_failure_ratio": 0.0,
+                # T-0.8 — a list of candidate bullet strings.
+                "items": ["Led migration of billing service to AWS.", "Led migration of the billing service to AWS."],
+            },
+            session=session,
+        )
+        self.assertFalse(result.passed)  # low ocr_confidence trips T-0.2; near-dupes trip T-0.8
+        self.assertEqual(
+            {row["tool_id"]: row["passed"] for row in result.data["summary"]},
+            {"T-0.2": False, "T-0.8": False},
+        )
+
+    def test_phase_2_batches_six_different_per_section_keys(self) -> None:
+        session = Session(session_id="s", user_id="u")
+        result = run_batch_checks(
+            tool_ids=["T-2.2", "T-2.4", "T-2.8", "T-6.6"],
+            inputs={
+                "lead_text": "Shipped the redesign",  # 3 words — passes T-2.2's 3-6 range
+                "summary_text": "Led the platform rebuild end to end.",
+                "section_order": ["NAME", "HEADLINE", "CONTACT", "SUMMARY", "SKILLS", "EXPERIENCE"],
+                "bullets": ["Did a thing.", "Did another thing.", "Did a third thing."],
+            },
+            session=session,
+        )
+        summary = {row["tool_id"]: row["passed"] for row in result.data["summary"]}
+        # Not asserting every check passes (that's each tool's own unit
+        # test's job) — asserting all four actually ran, meaning each
+        # pulled its own key out of one shared dict instead of colliding
+        # or getting skipped.
+        self.assertEqual(set(summary.keys()), {"T-2.2", "T-2.4", "T-2.8", "T-6.6"})
+        self.assertTrue(summary["T-2.2"])  # 3-word lead is in range
+
+    def test_phase_4_batches_docx_based_and_snippet_based_checks_together(self) -> None:
+        session, attachment_id = _session_with_docx_attachment(["Jane Doe", "Senior Engineer"])
+        ingest_document(attachment_id, session=session)
+        result = run_batch_checks(
+            tool_ids=["T-4.1", "T-4.5"],
+            inputs={
+                "attachment_id": attachment_id,  # resolves docx_base64 for T-4.1
+                "date_range_text": "Jan 2020 - Mar 2022",  # T-4.5 reads this directly
+            },
+            session=session,
+        )
+        summary = {row["tool_id"]: row["passed"] for row in result.data["summary"]}
+        self.assertEqual(set(summary.keys()), {"T-4.1", "T-4.5"})
+        self.assertTrue(summary["T-4.1"])  # plain paragraphs, no tables
+        self.assertTrue(summary["T-4.5"])  # well-formed date range
+
+    def test_phase_5_batches_headline_and_jd_coverage_checks(self) -> None:
+        session = Session(session_id="s", user_id="u")
+        result = run_batch_checks(
+            tool_ids=["T-6.7", "T-6.8"],
+            inputs={
+                "headline_text": "Senior Software Engineer",
+                "posting_title": "Senior Software Engineer",
+                "jd_phrases": ["kubernetes", "distributed systems"],
+                "resume_text": "Built distributed systems on Kubernetes at scale.",
+            },
+            session=session,
+        )
+        summary = {row["tool_id"]: row["passed"] for row in result.data["summary"]}
+        self.assertEqual(set(summary.keys()), {"T-6.7", "T-6.8"})
+        self.assertTrue(summary["T-6.7"])  # exact title match
+
+    def test_phase_7_batches_letter_text_and_salutation_checks(self) -> None:
+        session = Session(session_id="s", user_id="u")
+        letter = "\n\n".join(["Paragraph one.", "Paragraph two.", "Paragraph three."])
+        result = run_batch_checks(
+            tool_ids=["T-7.1", "T-7.4"],
+            inputs={"letter_text": letter, "salutation": "Dear Hiring Manager,"},
+            session=session,
+        )
+        summary = {row["tool_id"]: row["passed"] for row in result.data["summary"]}
+        self.assertEqual(set(summary.keys()), {"T-7.1", "T-7.4"})
+
+    def test_phase_8_batches_the_previously_missing_docx_checks(self) -> None:
+        session, attachment_id = _session_with_docx_attachment(["Jane Doe", "Senior Engineer"])
+        ingest_document(attachment_id, session=session)
+        # T-8.13 (check_illegal_characters) was missing from the
+        # documented Phase 8 list even though it's docx-based just like
+        # the checks already there.
+        result = run_batch_checks(
+            tool_ids=["T-8.5", "T-8.13"], inputs={"attachment_id": attachment_id}, session=session
+        )
+        summary = {row["tool_id"]: row["passed"] for row in result.data["summary"]}
+        self.assertEqual(set(summary.keys()), {"T-8.5", "T-8.13"})
+
+
 if __name__ == "__main__":
     unittest.main()
