@@ -453,6 +453,16 @@ Four decisions of 2026-07-23 supersede v0.9 as later and deliberate: tailored fi
 
 **Per-phase batch lists added.** Rule 4.5 stated the principle; per-phase batch lists state exactly which tool calls to combine in each phase. Phase 0: 5 checks after ingest → 1 turn. Phase 1 (audit): 15 slop checks → 1 turn. Phase 2 (master build): 6 per-section checks → 1 turn per section. Phase 4 (formatting): 9 checks → 1 turn. Phase 5 (fit check): 4 reads → 1 turn. Phase 7 (cover letter): 6 checks → 1 turn. Phase 8 (final review): 10 programmatic checks → 1 turn, then Team Lead pass in a second turn. Estimated reduction: from ~60+ sequential tool call round trips end-to-end to ~12-15.
 
+## 2026-07-27: Batching principle now actually enforced; live response streaming
+
+Rule 4.5 and the per-phase batch lists above stated the intended behavior on 2026-07-26, but the harness's own batching tool (`run_batch_checks`) only accepted TOOL/GATE-kind checks, silently excluding HYBRID nominators — 8 of Phase 1's 15 checks, most of Phase 8's Team Lead pass, and scattered checks in other phases. The checks the spec said should collapse to one turn were round-tripping individually instead, each paying full model-call latency. Confirmed against a real end-to-end run against a full-size master resume: Phase 1 Audit took over 7 minutes and the connection was dropped before completion.
+
+**Batching principle now matches implementation.** `run_batch_checks` now accepts HYBRID checks alongside TOOL/GATE (their findings already embed the flagged content inline, so nothing is lost by batching them); every phase's batch list above is now fully reachable through one harness call, not just documented as intent. Confirmed on a second end-to-end run: Phase 1 Audit completed in under 3 minutes, no dropped connection.
+
+**Iris's responses now stream live.** Previously the harness waited for a full model response to finish generating before sending anything to the browser — a long response (a large audit findings list, a full Master Build section) looked identical to a hung connection for however long it took to finish, with no way to tell the difference. Responses now stream token-by-token as the model writes them, same as the live tool-progress readout already in place. This is a delivery-mechanism change, not a change to what Iris is allowed to say — the communication standards above (terse, no process narration) still govern the content, they're now just visible incrementally instead of all at once.
+
+**Known follow-up, not yet fixed:** Iris's own conversational output (audit summaries, Master Build narration) has been observed violating its own em-dash prohibition and Principle 10's no-narration rule in live testing. The rule was already stated correctly in this document; enforcement against Iris's own output, not just the resume, is the open gap.
+
 ## Open items
 
 - **Two of six service names.** v0.9 names `buildService`, `tailorService`, and `docxService`; the handoff adds `reviewService`. Two remain unnamed, as does the mapping of nine phases onto six services.
