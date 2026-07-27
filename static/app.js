@@ -427,6 +427,9 @@ async function consumeChatStream(response) {
   // with the authoritative final text rather than trusting the
   // accumulated deltas, since a max_tokens cutoff notice is appended
   // server-side after streaming ends and was never itself streamed.
+  // "text_reset" (2026-07-27) can also clear it mid-turn: a tool_use
+  // turn's streamed text was preamble, not an answer, and gets removed
+  // rather than left to accumulate into whatever streams next.
   let streamingEl = null;
   let streamingBuffer = "";
 
@@ -463,6 +466,17 @@ async function consumeChatStream(response) {
         streamingBuffer += event.text;
         streamingEl.innerHTML = renderMarkdown(streamingBuffer);
         streamingEl.scrollIntoView({ behavior: "smooth", block: "end" });
+      } else if (event.type === "text_reset") {
+        // The turn that just finished was a tool_use turn, not the final
+        // answer - whatever text it streamed was preamble (the model
+        // thinking out loud through a tool-correction loop, since Sonnet
+        // 4.6 at EFFORT=medium has no private thinking budget to do that
+        // in instead), never a response. Remove the bubble it was
+        // growing in rather than let it sit on screen or carry into
+        // whatever the model streams next.
+        if (streamingEl) { streamingEl.remove(); }
+        streamingEl = null;
+        streamingBuffer = "";
       } else if (event.type === "file_ready") {
         appendDownloadButton(event.filename, event.content_type, event.data_base64);
       } else if (event.type === "done") {

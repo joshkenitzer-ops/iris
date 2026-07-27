@@ -391,18 +391,27 @@ def stream_turn(
       {"type": "tool_call", "tool": str}
       {"type": "tool_result", "tool": str, "passed": bool}
       {"type": "text_delta", "text": str}
+      {"type": "text_reset"}
       {"type": "done", "text": str, "messages": list}
       {"type": "error", "detail": str}
 
     "text_delta" fires as the model writes each response, including on
-    intermediate tool_use turns if the model produces any preamble text
-    (the spec asks it not to, but this surfaces it live either way
-    rather than silently dropping it as before). The final "done"
-    event's "text" is still the complete, authoritative text - concat-
-    enating every "text_delta" seen since the last "done"/tool_result
-    should equal it, but a client that only renders "done" still gets a
-    fully correct transcript, it just waits for it instead of watching
-    it arrive.
+    intermediate tool_use turns if the model produces any preamble text.
+    Unlike before (2026-07-27 latency fix), that preamble is no longer
+    trusted to become part of what the user sees: a tool_use turn is
+    exactly the shape of a multi-step self-correction loop the model has
+    no private scratchpad for (Sonnet 4.6 at EFFORT=medium runs no
+    thinking budget, config.py), and that reasoning was ending up
+    narrated in plain text instead, then persisting once the turn
+    completed. "text_reset" fires immediately after such a turn if it
+    streamed any text, telling the client to clear its live buffer
+    before the next event arrives. Only the text from the turn that
+    actually ends the conversation (stop_reason != "tool_use") survives
+    to become the "done" event's authoritative text; concatenating every
+    "text_delta" seen since the last "text_reset"/"done" should equal it.
+    A client that only renders "done" still gets a fully correct
+    transcript either way, it just waits for it instead of watching it
+    arrive.
 
     An "error" or "done" event is always the last one yielded. Known
     failure modes (UpstreamModelError, ToolLoopExhausted) are caught
@@ -493,7 +502,9 @@ def stream_turn(
                 # get_final_message() after the loop is free: the stream
                 # is already fully consumed and accumulated internally, so
                 # it returns immediately rather than blocking again.
+                streamed_text_this_iteration = False
                 for text in message_stream.text_stream:
+                    streamed_text_this_iteration = True
                     yield {"type": "text_delta", "text": _sanitize_assistant_text(text)}
                 response = message_stream.get_final_message()
         except anthropic.APIError as exc:
@@ -552,6 +563,28 @@ def stream_turn(
 
             yield {"type": "done", "text": final_text, "messages": working_messages}
             return
+
+        # This iteration is a tool-use turn, not the final answer: any text
+        # streamed above was preamble, not a response, and stop_reason ==
+        # "tool_use" is exactly the condition the model has no private
+        # scratchpad for. Sonnet 4.6 at EFFORT=medium runs no thinking
+        # budget (config.py; the prior Sonnet 5 default of always-on
+        # adaptive thinking is what caused the truncation/timeout incidents
+        # this config exists to avoid), so a multi-step self-correction
+        # loop, "the tool is counting the salutation, let me adjust," has
+        # nowhere to happen except in a visible text block. It used to stay
+        # on screen and become part of the persisted transcript once this
+        # turn's assistant message was appended above. It still gets
+        # appended to working_messages, the model's own context needs its
+        # own prior turn, it just no longer stays user-visible: "text_reset"
+        # tells the client to clear whatever it just streamed before the
+        # next tool_call/text_delta arrives, same principle as the SSE
+        # heartbeat, a blank comment line the client's event parser never
+        # surfaces, this is a real event type instead because the client
+        # has actual state (the streaming buffer) to clear, not just a
+        # connection to keep alive.
+        if streamed_text_this_iteration:
+            yield {"type": "text_reset"}
 
         tool_results = []
 
