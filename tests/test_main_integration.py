@@ -619,6 +619,40 @@ class TestChatEndpoint(_AuthOverriddenTestCase):
         )
         self.assertEqual(events[-1], {"type": "done", "text": "Hello there."})
 
+    def test_user_message_reaches_the_model_with_a_current_date_note(self) -> None:
+        """Task #1, 2026-07-27 handoff: the model otherwise has no
+        ground truth for today's date anywhere in its request context,
+        which produced a wrong year guess during Master Build. The note
+        has to be prepended per turn here, not baked into spec_text,
+        since spec_text is cached globally (spec 9.1) and a date baked
+        into a shared cache would go stale for every user at once."""
+        session_id = self._create_session()
+        captured = {}
+
+        def _capture_and_finish(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            yield {"type": "done", "text": "ok", "messages": kwargs["messages"]}
+
+        with patch.object(self.module, "stream_turn", side_effect=_capture_and_finish):
+            self.client.post(f"/sessions/{session_id}/chat", json={"message": "Let's start Master Build."})
+
+        sent_content = captured["messages"][-1]["content"]
+        self.assertTrue(sent_content.startswith("[Current date: "))
+        self.assertIn("Let's start Master Build.", sent_content)
+
+    def test_current_date_note_is_never_shown_as_the_users_own_text(self) -> None:
+        """The note lives only in what's sent to the model; the client
+        renders the user's own bubble from what it typed locally, and
+        the SSE stream back to the client never echoes the transcript
+        (see test_done_event_never_carries_the_internal_transcript), so
+        there is no path for the bracketed note to reach the user."""
+        session_id = self._create_session()
+        with patch.object(
+            self.module, "stream_turn", side_effect=_fake_stream_turn([{"type": "done", "text": "hello back", "messages": []}])
+        ):
+            response = self.client.post(f"/sessions/{session_id}/chat", json={"message": "hi"})
+        self.assertNotIn("Current date", response.text)
+
     def test_slow_gap_between_events_sends_sse_heartbeats(self) -> None:
         """Regression coverage for the connection-drop fix: a single
         slow model call used to leave the SSE stream silent for as long

@@ -33,6 +33,7 @@ import queue
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -101,6 +102,28 @@ def _get_spec_text() -> str:
     if "text" not in _spec_cache:
         _spec_cache["text"] = load_spec_text(SPEC_PATH)
     return _spec_cache["text"]
+
+
+def _with_current_date_note(message: str) -> str:
+    """Prepends a bracketed current-date note to a user turn.
+
+    This has to live here, not in spec_text: spec_text is cached
+    globally with an ephemeral cache_control breakpoint (spec 9.1) so
+    every user shares one cached read, which means a date baked into
+    it would go stale the moment the calendar turned over and stay
+    wrong for every session until the process restarts. The model
+    otherwise has no ground truth for today's date anywhere in its
+    request context (confirmed 2026-07-27: none in spec_loader.py,
+    claude_client.py, or main.py), which produced a real error during
+    Master Build where it proposed a date range for an ongoing role
+    using a wrong year guessed from training data.
+
+    "%b %Y" matches the exact format check_ongoing_role_date_substitution
+    (T-4.6) and check_date_format (T-4.5) already validate against, so
+    the model reads the same shape it's expected to produce."""
+    now = datetime.now()
+    note = f"[Current date: {now.strftime('%Y-%m-%d')} ({now.strftime('%b %Y')})]"
+    return f"{note}\n\n{message}"
 
 
 def _clerk_frontend_host() -> str:
@@ -672,7 +695,7 @@ def chat(
         # whole synchronous call before this change - the exclusivity
         # this protects is per turn, not per network round trip.
         with lock:
-            session.append_messages([{"role": "user", "content": body.message}])
+            session.append_messages([{"role": "user", "content": _with_current_date_note(body.message)}])
 
             # stream_turn is a plain synchronous generator, and a
             # single slow model call inside it (a HYBRID check the
