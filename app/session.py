@@ -35,6 +35,7 @@ from app.config import (
     MAX_ATTACHMENT_BYTES_PER_SESSION,
     MAX_ATTACHMENTS_PER_SESSION,
     MAX_SESSIONS_PER_USER,
+    MAX_TRANSCRIPT_CHARS,
     MAX_TRANSCRIPT_MESSAGES,
     SESSION_TTL_SECONDS,
 )
@@ -263,7 +264,7 @@ class Session:
 
     def append_messages(self, new_messages: List[Dict]) -> None:
         """Appends to the server-owned transcript, trimming oldest
-        first past MAX_TRANSCRIPT_MESSAGES.
+        first.
 
         The transcript lives here, not in the request body, because a
         client-supplied history is a client-authored history: it lets a
@@ -272,8 +273,35 @@ class Session:
         self-report that spec rule 4.1 refuses to accept as
         enforcement (B1, pre-deploy review 2026-07-25)."""
         self.messages.extend(new_messages)
+        self.trim_transcript()
+
+    def trim_transcript(self) -> None:
+        """Applies both transcript ceilings, oldest dropped first.
+
+        The count cap alone bounds how many turns are retained but says
+        nothing about their size, and a transcript's cost is driven by
+        characters, not turns: one tool result carrying an extracted
+        document can outweigh ninety-nine ordinary messages. The
+        character backstop is what makes worst-case context bounded
+        rather than merely typical-case reasonable (2026-07-27).
+
+        Kept as a method rather than inlined at the two call sites so
+        the /chat route's wholesale transcript replacement and the
+        incremental append path cannot drift apart on which caps they
+        apply."""
         if len(self.messages) > MAX_TRANSCRIPT_MESSAGES:
             self.messages = self.messages[-MAX_TRANSCRIPT_MESSAGES:]
+
+        # Always keep at least the newest message, even if it alone
+        # exceeds the budget: dropping the turn the model is mid-way
+        # through is worse than briefly exceeding a soft ceiling, and
+        # the real ceilings (MAX_INGEST_TEXT_CHARS, INLINE_EXTRACT_CHARS)
+        # already bound how large any single message can get.
+        while len(self.messages) > 1 and self.transcript_chars() > MAX_TRANSCRIPT_CHARS:
+            self.messages.pop(0)
+
+    def transcript_chars(self) -> int:
+        return sum(len(str(m.get("content", ""))) for m in self.messages)
 
     def active_facts(self) -> List[Fact]:
         return [f for f in self.registry.values() if f.status == "active"]

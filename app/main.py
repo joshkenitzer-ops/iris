@@ -50,7 +50,6 @@ from app.config import (
     CHAT_RATE_LIMIT_CALLS,
     CHAT_RATE_LIMIT_WINDOW_SECONDS,
     MAX_MESSAGE_CHARS,
-    MAX_TRANSCRIPT_MESSAGES,
     MAX_UPLOAD_BYTES,
     SSE_HEARTBEAT_INTERVAL_SECONDS,
 )
@@ -673,7 +672,11 @@ def chat(
                     continue
 
                 if event["type"] == "done":
-                    session.messages = event["messages"][-MAX_TRANSCRIPT_MESSAGES:]
+                    # trim_transcript applies both the count and the
+                    # character ceiling; slicing by count here would
+                    # silently skip the size backstop.
+                    session.messages = list(event["messages"])
+                    session.trim_transcript()
                     store.save(session)
                     yield _sse_event({"type": "done", "text": event["text"]})
                 else:

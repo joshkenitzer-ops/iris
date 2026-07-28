@@ -628,9 +628,16 @@ def stream_turn(
                     # "no text was pulled from the file."
                     data = result.data or {}
                     has_file = data.get("file_id")
+                    # "text" covers read_attachment_text (T-0.10), added
+                    # 2026-07-27. Without it that tool's entire payload
+                    # would be stripped here and the model would page
+                    # through a document receiving nothing but
+                    # "passed: true" — the exact failure this stripping
+                    # rule already caused once for ingest_document.
                     has_extraction_content = (
                         "extracted_text" in data
                         or "raw_char_count" in data
+                        or "text" in data
                     )
                     should_preserve = has_file or has_extraction_content
                     content = {

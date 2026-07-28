@@ -22,7 +22,7 @@ import io
 import logging
 from typing import List
 
-from app.config import EXTRACTION_CONFIDENCE, MAX_INGEST_TEXT_CHARS
+from app.config import EXTRACTION_CONFIDENCE, INLINE_EXTRACT_CHARS, MAX_INGEST_TEXT_CHARS
 from app.enforcement import EnforcementKind, ToolResult, registry, tool
 from app.session import Attachment, Session
 from app.untrusted_text import wrap_untrusted
@@ -86,6 +86,50 @@ def ingest_document(attachment_id: str, session: Session) -> ToolResult:
     )
 
 
+def _extraction_payload(text: str, source_label: str, attachment: Attachment, extra: dict) -> dict:
+    """Builds ingest_document's data payload, inlining the full text only
+    when it is small enough that carrying it in the transcript is
+    harmless.
+
+    A tool result is not read once and discarded: it is appended to the
+    transcript and re-sent as input on every subsequent call for the
+    life of the session. A resume (largest tested ~31,000 chars) costs
+    ~8,000 tokens a turn to carry, which is fine and is what the
+    validated flow already does. A performance export at the
+    MAX_INGEST_TEXT_CHARS ceiling is ~100,000 tokens a turn, which is
+    not.
+
+    So: under INLINE_EXTRACT_CHARS, behave exactly as before. Over it,
+    hand back a preview and tell the model plainly where the rest is.
+    The full text is already cached server-side on the attachment, so
+    nothing is lost, and paging matches how a document that size is
+    meant to be worked anyway (role by role, spec Phase 0)."""
+    total = len(text)
+    payload = {"raw_char_count": total, **extra}
+
+    if total <= INLINE_EXTRACT_CHARS:
+        payload["extracted_text"] = wrap_untrusted(text, source_label)
+        payload["is_complete"] = True
+        return payload
+
+    logger.info(
+        "ingest_document: %d chars exceeds the %d inline limit; returning a preview and paging via T-0.10",
+        total,
+        INLINE_EXTRACT_CHARS,
+    )
+    payload["extracted_text"] = wrap_untrusted(text[:INLINE_EXTRACT_CHARS], f"{source_label}, first {INLINE_EXTRACT_CHARS} of {total} characters")
+    payload["is_complete"] = False
+    payload["preview_char_count"] = INLINE_EXTRACT_CHARS
+    payload["next_step"] = (
+        f"This document is {total} characters, too large to hold in full. The text above is "
+        f"the first {INLINE_EXTRACT_CHARS} characters. The rest is stored server-side: call "
+        f"read_attachment_text (T-0.10) with attachment_id '{attachment.id}' and an offset to "
+        "read any further span. Work through a document this size one role or section at a "
+        "time rather than trying to read all of it at once."
+    )
+    return payload
+
+
 def _ingest_docx(raw: bytes, attachment: Attachment) -> ToolResult:
     from docx import Document  # already a hard dependency, via app.tools.docx_render/docx_checks
 
@@ -146,11 +190,7 @@ def _ingest_docx(raw: bytes, attachment: Attachment) -> ToolResult:
     attachment.extracted_text = text[:MAX_INGEST_TEXT_CHARS]
     return ToolResult(
         passed=True,
-        data={
-            "extracted_text": wrap_untrusted(text, "uploaded .docx"),
-            "paragraph_count": len(paragraphs),
-            "raw_char_count": len(text),
-        },
+        data=_extraction_payload(text, "uploaded .docx", attachment, {"paragraph_count": len(paragraphs)}),
     )
 
 
@@ -211,10 +251,82 @@ def _ingest_pdf(raw: bytes, attachment: Attachment) -> ToolResult:
     attachment.extracted_text = text[:MAX_INGEST_TEXT_CHARS]
     return ToolResult(
         passed=True,
+        data=_extraction_payload(text, "uploaded .pdf", attachment, {"page_count": len(reader.pages)}),
+    )
+
+
+_READ_SPAN_MAX = 40_000
+
+
+@tool(
+    id="T-0.10",
+    name="read_attachment_text",
+    description=(
+        "Reads a span of an already-ingested document's text from "
+        "server-side storage, by offset. Use this when ingest_document "
+        "reported is_complete=false, meaning the document was too large "
+        "to hand back in full and you only received a preview. "
+        f"Returns at most {_READ_SPAN_MAX} characters per call; pass an "
+        "offset to continue from where the last read ended (the result "
+        "carries next_offset, or has_more=false when you have reached "
+        "the end). Work a large document one role or section at a time "
+        "rather than paging the whole thing into context, which defeats "
+        "the purpose of not inlining it. Requires ingest_document to "
+        "have run on this attachment first."
+    ),
+    kind=EnforcementKind.TOOL,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "attachment_id": {"type": "string"},
+            "offset": {"type": "integer", "description": "Character offset to start from. Defaults to 0."},
+            "length": {
+                "type": "integer",
+                "description": f"Characters to read. Capped at {_READ_SPAN_MAX}.",
+            },
+        },
+        "required": ["attachment_id"],
+    },
+    needs_session=True,
+)
+def read_attachment_text(attachment_id: str, session: Session, offset: int = 0, length: int = _READ_SPAN_MAX) -> ToolResult:
+    attachment = session.get_attachment(attachment_id)
+    if attachment is None:
+        return ToolResult(
+            passed=False,
+            findings=[{
+                "severity": "Critical",
+                "issue": f"No attachment '{attachment_id}' on this session.",
+                "fix": "Upload the file first and use the returned attachment_id.",
+            }],
+        )
+    if attachment.extracted_text is None:
+        return ToolResult(
+            passed=False,
+            findings=[{
+                "severity": "High",
+                "issue": f"'{attachment.filename}' has not been extracted yet.",
+                "fix": "Call ingest_document on this attachment_id first; this tool reads its cached output.",
+            }],
+        )
+
+    full = attachment.extracted_text
+    total = len(full)
+    # Clamp rather than error: an offset past the end is a normal way to
+    # discover you have finished paging, not a failure worth a finding.
+    start = max(0, min(int(offset), total))
+    span = max(1, min(int(length), _READ_SPAN_MAX))
+    chunk = full[start : start + span]
+    end = start + len(chunk)
+
+    return ToolResult(
+        passed=True,
         data={
-            "extracted_text": wrap_untrusted(text, "uploaded .pdf"),
-            "page_count": len(reader.pages),
-            "raw_char_count": len(text),
+            "text": wrap_untrusted(chunk, f"{attachment.filename}, characters {start} to {end} of {total}"),
+            "offset": start,
+            "next_offset": end,
+            "has_more": end < total,
+            "total_char_count": total,
         },
     )
 

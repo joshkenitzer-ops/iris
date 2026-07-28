@@ -112,8 +112,37 @@ MAX_MESSAGE_CHARS = 40_000  # raised from 20_000 — a full master resume
 # and says so rather than silently dropping the excess either way).
 MAX_INGEST_TEXT_CHARS = 400_000
 
+# Largest extracted text handed to the model INLINE in an ingest result.
+#
+# The distinction matters because a tool result does not just get read
+# once, it is appended to the transcript and re-sent as input on every
+# subsequent call for the life of the session. At the 400,000-char
+# ceiling above that is ~100,000 tokens per call, roughly half of
+# Sonnet's context window consumed by a single upload, billed on every
+# turn (cache softens but does not remove this: writes bill at 1.25x and
+# the TTL is five minutes).
+#
+# 60,000 chars (~15,000 tokens) is chosen to sit above any real resume,
+# the largest tested is ~31,000 chars, so the resume path behaves
+# EXACTLY as it did before this split and nothing about the validated
+# flow changes. Documents past it (performance exports, spec Phase 0)
+# get a preview plus paging via read_attachment_text (T-0.10), which
+# reads the full cached text server-side. That also matches how those
+# documents are meant to be worked anyway: role by role, not in one
+# pass.
+INLINE_EXTRACT_CHARS = 60_000
+
 # Turns retained in a session transcript. Oldest are dropped first.
 MAX_TRANSCRIPT_MESSAGES = 100
+
+# Backstop on total transcript size, in characters, applied after the
+# message-count cap. A count-only cap bounds the number of turns but not
+# their size: 100 messages carrying large tool results is unbounded
+# context. ~250,000 chars is ~62,000 tokens, leaving comfortable room
+# under the model's window for the system prompt, tool schemas, and a
+# full response. Oldest messages are dropped first, same policy as the
+# count cap.
+MAX_TRANSCRIPT_CHARS = 250_000
 
 # Idle time before a session is evicted. In-memory storage means an
 # abandoned session is retained for the life of the process otherwise.
