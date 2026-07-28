@@ -149,5 +149,90 @@ class TestGapRemovalGateOnRender(unittest.TestCase):
         self.assertTrue(_render(self.session, FOUNDATIONAL).passed)
 
 
+class TestUnresolvedMarkerGateIsReachable(unittest.TestCase):
+    """T-6.14. A resume that ships containing "[ADD METRIC: ...]" is the
+    single most embarrassing thing Iris could hand a job seeker, and
+    require_no_unresolved_markers existed to stop it with ZERO callers
+    anywhere in app/ until 2026-07-28. The tool of the same name was
+    registered, so the model could choose to call it, which is precisely
+    the model self-report spec rule 4.1 refuses to accept as
+    enforcement.
+
+    Unlike the two session-state gates beside it, this one is a pure
+    function of the artifact being rendered, which is what makes it safe
+    to enforce here: it cannot misfire on a correct document."""
+
+    def setUp(self) -> None:
+        self.session = Session(session_id="s", user_id="u")
+
+    def test_an_unresolved_marker_blocks_a_deliverable(self) -> None:
+        sections = [{"heading": "EXPERIENCE", "body": "Cut deployment time [ADD METRIC: by how much?]."}]
+        result = _render(self.session, DELIVERABLE, sections)
+        self.assertFalse(result.passed)
+        self.assertEqual(result.data["blocked_by_gate"], "T-6.14")
+
+    def test_blocking_produces_no_downloadable_file(self) -> None:
+        """The enforcement is the absence of a file_id: no file stored,
+        no file_ready event, no download button. The findings only make
+        the reason legible."""
+        sections = [{"heading": "EXPERIENCE", "body": "Grew revenue [ADD METRIC: percent]."}]
+        result = _render(self.session, DELIVERABLE, sections)
+        self.assertIsNone((result.data or {}).get("file_id"))
+
+    def test_an_unresolved_marker_blocks_a_cover_letter_too(self) -> None:
+        sections = [{"heading": "BODY", "body": "I led the migration [ADD METRIC: team size]."}]
+        self.assertFalse(_render(self.session, COVER_LETTER, sections).passed)
+
+    def test_a_clean_deliverable_still_renders(self) -> None:
+        """The gate must not become a tax on correct documents."""
+        sections = [{"heading": "EXPERIENCE", "body": "Cut deployment time by 40 percent."}]
+        result = _render(self.session, DELIVERABLE, sections)
+        self.assertTrue(result.passed, result.findings)
+        self.assertIsNotNone(result.data["file_id"])
+
+    def test_the_foundational_resume_is_exempt(self) -> None:
+        """Deliberate, and consistent with the other delivery gates: the
+        foundational resume is a source document, not something sent to
+        an employer, and markers are legitimate work-in-progress there."""
+        sections = [{"heading": "EXPERIENCE", "body": "Led the migration [ADD METRIC: team size]."}]
+        self.assertTrue(_render(self.session, FOUNDATIONAL, sections).passed)
+
+
+class TestSessionStateGatesAreDeliberatelyNotWiredHere(unittest.TestCase):
+    """Guards a decision that looks like an omission.
+
+    require_fit_check_completed (T-5.1) and require_registry_populated
+    (T-5.2) are NOT enforced at render, and that is deliberate. Nothing
+    in the codebase ever sets session.fit_check_completed to True:
+    Phase 5 has zero registered tools, so there is nothing to set it.
+    Adding that gate here would not restore a dormant protection, it
+    would permanently block every tailored resume download.
+
+    This test fails the moment someone "fixes" the omission, and points
+    at the setter that has to exist first."""
+
+    def test_a_tailored_render_succeeds_without_a_recorded_fit_check(self) -> None:
+        session = Session(session_id="s", user_id="u")
+        self.assertFalse(session.fit_check_completed)
+        self.assertTrue(_render(session, DELIVERABLE).passed)
+
+    def test_a_tailored_render_succeeds_with_an_empty_registry(self) -> None:
+        session = Session(session_id="s", user_id="u")
+        self.assertTrue(session.is_registry_empty())
+        self.assertTrue(_render(session, DELIVERABLE).passed)
+
+    def test_nothing_sets_fit_check_completed_to_true(self) -> None:
+        """The precondition for wiring T-5.1. When this fails, a setter
+        exists and the gate can be reconsidered."""
+        import pathlib
+
+        hits = []
+        for path in pathlib.Path("app").rglob("*.py"):
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if "fit_check_completed" in line and "= True" in line:
+                    hits.append(f"{path}:{i}")
+        self.assertEqual(hits, [], f"A setter now exists ({hits}); reconsider wiring T-5.1.")
+
+
 if __name__ == "__main__":
     unittest.main()

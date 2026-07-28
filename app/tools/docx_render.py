@@ -217,7 +217,12 @@ def _save_to_bytes(doc: Document) -> bytes:
 import base64
 
 from app.enforcement import EnforcementKind, ToolResult, tool
-from app.gates import GateBlocked, require_gap_not_silently_removed, require_no_open_criticals
+from app.gates import (
+    GateBlocked,
+    require_gap_not_silently_removed,
+    require_no_open_criticals,
+    require_no_unresolved_markers,
+)
 from app.tools.formatting import _FOUNDATIONAL_RE
 
 
@@ -305,11 +310,34 @@ def render_resume_docx_tool(sections: list, filename: str, session: Session, fon
     # is that no file is stored, so no file_id comes back, so no
     # download button appears; the findings just make the reason
     # legible to the model and therefore to the user.
+    # Which gates belong at this chokepoint, and which deliberately do
+    # not (2026-07-28 audit of every require_* in app/gates.py):
+    #
+    # A gate is safe to enforce here when it is a PURE FUNCTION OF THE
+    # ARTIFACT being delivered. require_no_unresolved_markers reads the
+    # text about to be rendered and blocks a document containing
+    # "[ADD METRIC: ...]". It cannot misfire on a correct document, and
+    # a document carrying an unresolved placeholder is never fit to
+    # send under any circumstances.
+    #
+    # A gate is NOT safe here when it depends on session bookkeeping the
+    # model is trusted to maintain. require_fit_check_completed (T-5.1)
+    # is the cautionary case: nothing in the codebase ever sets
+    # session.fit_check_completed to True. Phase 5 has zero registered
+    # tools, so there is nothing to set it. Wiring that gate here would
+    # not have restored an inert protection, it would have permanently
+    # blocked every tailored resume download. Same reasoning holds for
+    # require_registry_populated (T-5.2): it depends on the model having
+    # called extract_facts_into_registry, and a gate that turns a missed
+    # model call into an undownloadable document is worse than the risk
+    # it covers. Both stay unwired until the state they read is itself
+    # enforced rather than merely expected.
     if _is_deliverable(filename):
         final_text = "\n".join(f"{heading}\n{body}" for heading, body in pairs)
         try:
             require_no_open_criticals(session)
             require_gap_not_silently_removed(session, final_text)
+            require_no_unresolved_markers(final_text)
         except GateBlocked as exc:
             return ToolResult(
                 passed=False,
