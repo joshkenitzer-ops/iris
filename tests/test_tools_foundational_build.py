@@ -2,7 +2,7 @@ import unittest
 
 from app.gates import GateBlocked
 from app.session import Fact, Session
-from app.tools.master_build import (
+from app.tools.foundational_build import (
     check_headline_placement,
     check_headline_skills_backed,
     check_role_summary_length,

@@ -120,11 +120,11 @@ def check_locked_fact_scope(text: str, session: Session) -> ToolResult:
 
 @tool(
     id="T-8.16",
-    name="enumerate_unused_master_bullets",
+    name="enumerate_unused_foundational_bullets",
     description=(
-        "Exhaustively lists every master bullet id not present in the "
-        "tailored document. Exhaustive by construction, a set "
-        "difference, rather than a sampled glance, since the spec "
+        "Exhaustively lists every foundational-resume bullet id not "
+        "present in the tailored document. Exhaustive by construction, "
+        "a set difference, rather than a sampled glance, since the spec "
         "specifically calls out 'checked against every bullet, not a "
         "glance' as something a model does not reliably do on its "
         "own. Choosing what to pull in from this list is judgment "
@@ -134,14 +134,14 @@ def check_locked_fact_scope(text: str, session: Session) -> ToolResult:
     input_schema={
         "type": "object",
         "properties": {
-            "master_bullet_ids": {"type": "array", "items": {"type": "string"}},
+            "foundational_bullet_ids": {"type": "array", "items": {"type": "string"}},
             "used_bullet_ids": {"type": "array", "items": {"type": "string"}},
         },
-        "required": ["master_bullet_ids", "used_bullet_ids"],
+        "required": ["foundational_bullet_ids", "used_bullet_ids"],
     },
 )
-def enumerate_unused_master_bullets(master_bullet_ids: List[str], used_bullet_ids: List[str]) -> ToolResult:
-    unused = sorted(set(master_bullet_ids) - set(used_bullet_ids))
+def enumerate_unused_foundational_bullets(foundational_bullet_ids: List[str], used_bullet_ids: List[str]) -> ToolResult:
+    unused = sorted(set(foundational_bullet_ids) - set(used_bullet_ids))
     return ToolResult(passed=True, data={"unused_bullet_ids": unused, "unused_count": len(unused)})
 
 
@@ -184,29 +184,29 @@ def record_fix_attempt(content_signature: str, session: Session) -> ToolResult:
     id="T-8.3",
     name="nominate_added_clauses",
     description=(
-        "Diffs tailored text against the master and isolates spans "
-        "present only in the tailored version, explanatory or "
-        "clarifying clauses added during tailoring. Nominates each "
-        "for the same registry rigor as an original claim, since added "
-        "text is where an unsupported claim most often enters "
-        "unnoticed."
+        "Diffs tailored text against the foundational resume and "
+        "isolates spans present only in the tailored version, "
+        "explanatory or clarifying clauses added during tailoring. "
+        "Nominates each for the same registry rigor as an original "
+        "claim, since added text is where an unsupported claim most "
+        "often enters unnoticed."
     ),
     kind=EnforcementKind.HYBRID,
     input_schema={
         "type": "object",
         "properties": {
-            "master_text": {"type": "string"},
+            "foundational_text": {"type": "string"},
             "tailored_text": {"type": "string"},
         },
-        "required": ["master_text", "tailored_text"],
+        "required": ["foundational_text", "tailored_text"],
     },
 )
-def nominate_added_clauses(master_text: str, tailored_text: str) -> ToolResult:
+def nominate_added_clauses(foundational_text: str, tailored_text: str) -> ToolResult:
     import difflib
 
-    master_words = master_text.split()
+    foundational_words = foundational_text.split()
     tailored_words = tailored_text.split()
-    matcher = difflib.SequenceMatcher(None, master_words, tailored_words)
+    matcher = difflib.SequenceMatcher(None, foundational_words, tailored_words)
 
     added_spans = []
     for tag, _, _, j1, j2 in matcher.get_opcodes():
@@ -216,7 +216,7 @@ def nominate_added_clauses(master_text: str, tailored_text: str) -> ToolResult:
     findings = [
         {
             "severity": "Medium",
-            "issue": f"Added clause not present in the master: '{span}'.",
+            "issue": f"Added clause not present in the foundational resume: '{span}'.",
             "fix": "Check this span against the registry with full rigor before it ships.",
         }
         for span in added_spans

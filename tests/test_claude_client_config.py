@@ -40,7 +40,7 @@ class TestClientConfiguration(unittest.TestCase):
 
     def test_retries_exceed_the_sdk_default(self) -> None:
         """The asymmetry justifies it: a retry costs a second of backoff,
-        a failure surfacing mid-Master-Build costs the user three minutes
+        a failure surfacing mid-Foundational-Build costs the user three minutes
         of work they then repeat."""
         from anthropic._constants import DEFAULT_MAX_RETRIES
 

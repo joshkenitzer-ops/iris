@@ -21,7 +21,7 @@ from app.session import Finding, Session
 
 DELIVERABLE = "Kenitzer_Joshua_Resume_Acme_SrIDDev_V1.docx"
 COVER_LETTER = "Kenitzer_Joshua_CoverLetter_Acme_SrIDDev_V1.docx"
-MASTER = "Kenitzer_Joshua_Resume_Master_2026-07-27.docx"
+FOUNDATIONAL = "Kenitzer_Joshua_Resume_Foundational_2026-07-27.docx"
 
 SECTIONS = [{"heading": "EXPERIENCE", "body": "Led the platform migration."}]
 
@@ -83,34 +83,35 @@ class TestDeliverableRenderIsGated(unittest.TestCase):
         self.assertTrue(_render(self.session, DELIVERABLE).passed)
 
 
-class TestMasterRenderIsNotGated(unittest.TestCase):
-    """Spec Phase 2: the master is "the source document, not a document
-    to send," and Iris renders it immediately on Master Build completion,
-    long before Final Review. Gating it would break Phase 2."""
+class TestFoundationalRenderIsNotGated(unittest.TestCase):
+    """Spec Phase 2: the foundational resume is "the source document,
+    not a document to send," and Iris renders it immediately on
+    Foundational Build completion, long before Final Review. Gating it
+    would break Phase 2."""
 
     def setUp(self) -> None:
         self.session = Session(session_id="s", user_id="u")
 
-    def test_master_renders_with_an_open_critical(self) -> None:
+    def test_foundational_renders_with_an_open_critical(self) -> None:
         self.session.findings.append(_critical())
-        result = _render(self.session, MASTER)
+        result = _render(self.session, FOUNDATIONAL)
         self.assertTrue(result.passed)
         self.assertIn("file_id", result.data)
 
-    def test_acknowledged_phase1_critical_still_lets_the_master_render(self) -> None:
+    def test_acknowledged_phase1_critical_still_lets_the_foundational_render(self) -> None:
         """The specific case a naive fix breaks. A Phase 1 Critical the
         user acknowledged with a stated reason satisfies
         require_phase1_disposition, but open_criticals() still counts it,
         since dispositioned is not dismissed. Gating every render would
-        have locked these users out of Master Build entirely."""
+        have locked these users out of Foundational Build entirely."""
         self.session.findings.append(_critical(tool_id="T-1.3", dispositioned=True))
         self.assertEqual(len(self.session.undispositioned_phase1_criticals()), 0)
         self.assertEqual(len(self.session.open_criticals()), 1)
-        self.assertTrue(_render(self.session, MASTER).passed)
+        self.assertTrue(_render(self.session, FOUNDATIONAL).passed)
 
-    def test_master_with_a_version_suffix_is_still_a_master(self) -> None:
+    def test_foundational_with_a_version_suffix_is_still_foundational(self) -> None:
         self.session.findings.append(_critical())
-        self.assertTrue(_render(self.session, "Kenitzer_Joshua_Resume_Master_2026-07-27_v2.docx").passed)
+        self.assertTrue(_render(self.session, "Kenitzer_Joshua_Resume_Foundational_2026-07-27_v2.docx").passed)
 
 
 class TestUnrecognizedFilenameFailsClosed(unittest.TestCase):
@@ -144,8 +145,8 @@ class TestGapRemovalGateOnRender(unittest.TestCase):
         self.session.gap_acknowledgments["Section 508 accessibility"] = "Covered verbally in the cover letter close."
         self.assertTrue(_render(self.session, COVER_LETTER).passed)
 
-    def test_master_render_is_unaffected_by_an_unmet_gap(self) -> None:
-        self.assertTrue(_render(self.session, MASTER).passed)
+    def test_foundational_render_is_unaffected_by_an_unmet_gap(self) -> None:
+        self.assertTrue(_render(self.session, FOUNDATIONAL).passed)
 
 
 if __name__ == "__main__":

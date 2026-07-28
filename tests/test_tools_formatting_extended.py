@@ -41,21 +41,21 @@ class TestFilenamePattern(unittest.TestCase):
         )
         self.assertTrue(result.passed)
 
-    def test_valid_master_passes(self) -> None:
+    def test_valid_foundational_passes(self) -> None:
         result = check_filename_pattern(
-            "Kenitzer_Josh_Resume_Master_2026-07-24.docx", artifact_type="master"
+            "Kenitzer_Josh_Resume_Foundational_2026-07-24.docx", artifact_type="foundational"
         )
         self.assertTrue(result.passed)
 
-    def test_master_with_version_suffix_passes(self) -> None:
+    def test_foundational_with_version_suffix_passes(self) -> None:
         result = check_filename_pattern(
-            "Kenitzer_Josh_Resume_Master_2026-07-24_v2.docx", artifact_type="master"
+            "Kenitzer_Josh_Resume_Foundational_2026-07-24_v2.docx", artifact_type="foundational"
         )
         self.assertTrue(result.passed)
 
-    def test_master_pattern_used_for_tailored_file_fails(self) -> None:
+    def test_foundational_pattern_used_for_tailored_file_fails(self) -> None:
         result = check_filename_pattern(
-            "Kenitzer_Josh_Resume_Master_2026-07-24.docx", artifact_type="tailored_resume"
+            "Kenitzer_Josh_Resume_Foundational_2026-07-24.docx", artifact_type="tailored_resume"
         )
         self.assertFalse(result.passed)
 

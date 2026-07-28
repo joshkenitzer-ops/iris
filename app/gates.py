@@ -43,7 +43,7 @@ def require_registry_populated(session: Session) -> None:
     if session.is_registry_empty():
         raise GateBlocked(
             "T-5.2",
-            "Locked Facts Registry is empty. Complete Master Resume Build "
+            "Locked Facts Registry is empty. Complete Foundational Resume Build "
             "before Fit Check or Tailoring.",
         )
 
@@ -171,11 +171,11 @@ def require_amendment_confirmed(confirmed: bool) -> None:
         )
 
 
-def check_profile_fingerprint(session: Session, uploaded_master_fingerprint: str) -> bool:
+def check_profile_fingerprint(session: Session, uploaded_foundational_fingerprint: str) -> bool:
     """T-2.19: warn and proceed, never block. Returns True on match; the
     caller decides what "warn" means for its surface (a banner, a log
     line), but this function never raises."""
-    if session.master_fingerprint is None:
-        session.master_fingerprint = uploaded_master_fingerprint
+    if session.foundational_fingerprint is None:
+        session.foundational_fingerprint = uploaded_foundational_fingerprint
         return True
-    return session.master_fingerprint == uploaded_master_fingerprint
+    return session.foundational_fingerprint == uploaded_foundational_fingerprint

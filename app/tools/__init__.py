@@ -21,7 +21,7 @@ from app.tools import final_review  # noqa: F401
 from app.tools import formatting  # noqa: F401
 from app.tools import harness_meta  # noqa: F401
 from app.tools import intake  # noqa: F401
-from app.tools import master_build  # noqa: F401
+from app.tools import foundational_build  # noqa: F401
 from app.tools import page_estimate  # noqa: F401
 from app.tools import profile  # noqa: F401
 from app.tools import redaction  # noqa: F401
@@ -43,7 +43,7 @@ __all__ = [
     "formatting",
     "harness_meta",
     "intake",
-    "master_build",
+    "foundational_build",
     "page_estimate",
     "profile",
     "redaction",

@@ -1,7 +1,7 @@
 import unittest
 
 from app.session import Finding, Session
-from app.tools.master_build import check_bold_lead_structure, get_open_audit_findings_for_section
+from app.tools.foundational_build import check_bold_lead_structure, get_open_audit_findings_for_section
 
 
 class TestBoldLeadStructure(unittest.TestCase):

@@ -417,8 +417,8 @@ def stream_turn(
                 status_msg = "Checking the fit..."
             elif any(w in last_user_lower for w in ("cover letter", "letter")):
                 status_msg = "Drafting the cover letter..."
-            elif any(w in last_user_lower for w in ("build", "master", "lock")):
-                status_msg = "Building your master resume..."
+            elif any(w in last_user_lower for w in ("build", "foundational", "master", "lock")):
+                status_msg = "Building your foundational resume..."
             else:
                 status_msg = "Working on it..."
             yield {"type": "status", "message": status_msg}

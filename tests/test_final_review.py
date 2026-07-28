@@ -4,7 +4,7 @@ from app.session import Fact, Session
 from app.tools.final_review import (
     check_full_slop_scan,
     check_locked_fact_scope,
-    enumerate_unused_master_bullets,
+    enumerate_unused_foundational_bullets,
     record_fix_attempt,
 )
 
@@ -55,14 +55,14 @@ class TestLockedFactScope(unittest.TestCase):
         self.assertTrue(result.passed)
 
 
-class TestEnumerateUnusedMasterBullets(unittest.TestCase):
+class TestEnumerateUnusedFoundationalBullets(unittest.TestCase):
     def test_all_used_returns_empty(self) -> None:
-        result = enumerate_unused_master_bullets(master_bullet_ids=["b1", "b2"], used_bullet_ids=["b1", "b2"])
+        result = enumerate_unused_foundational_bullets(foundational_bullet_ids=["b1", "b2"], used_bullet_ids=["b1", "b2"])
         self.assertEqual(result.data["unused_bullet_ids"], [])
 
     def test_unused_bullets_enumerated_exhaustively(self) -> None:
-        result = enumerate_unused_master_bullets(
-            master_bullet_ids=["b1", "b2", "b3", "b4"], used_bullet_ids=["b1", "b3"]
+        result = enumerate_unused_foundational_bullets(
+            foundational_bullet_ids=["b1", "b2", "b3", "b4"], used_bullet_ids=["b1", "b3"]
         )
         self.assertEqual(result.data["unused_bullet_ids"], ["b2", "b4"])
         self.assertEqual(result.data["unused_count"], 2)

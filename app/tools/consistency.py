@@ -153,33 +153,34 @@ def check_figure_consistency(
 
 @tool(
     id="T-8.9",
-    name="check_figures_against_master",
+    name="check_figures_against_foundational",
     description=(
         "Cross-document check, distinct from check_figure_consistency "
         "(T-8.8), which clusters figures within one document. This "
         "extracts every number from the tailored text and flags any "
-        "that does not appear anywhere in the master text at all, a "
-        "figure with no traceable origin in the source of truth."
+        "that does not appear anywhere in the foundational-resume text "
+        "at all, a figure with no traceable origin in the source of "
+        "truth."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={
         "type": "object",
         "properties": {
             "tailored_text": {"type": "string"},
-            "master_text": {"type": "string"},
+            "foundational_text": {"type": "string"},
         },
-        "required": ["tailored_text", "master_text"],
+        "required": ["tailored_text", "foundational_text"],
     },
 )
-def check_figures_against_master(tailored_text: str, master_text: str) -> ToolResult:
+def check_figures_against_foundational(tailored_text: str, foundational_text: str) -> ToolResult:
     tailored_numbers = {m.group(1) for m in re.finditer(r"\b(\d[\d,]*(?:\.\d+)?)\b", tailored_text)}
-    master_numbers = {m.group(1) for m in re.finditer(r"\b(\d[\d,]*(?:\.\d+)?)\b", master_text)}
+    foundational_numbers = {m.group(1) for m in re.finditer(r"\b(\d[\d,]*(?:\.\d+)?)\b", foundational_text)}
 
-    untraceable = sorted(tailored_numbers - master_numbers)
+    untraceable = sorted(tailored_numbers - foundational_numbers)
     findings = [
         {
             "severity": "Critical",
-            "issue": f"Figure '{number}' in the tailored text does not appear anywhere in the master.",
+            "issue": f"Figure '{number}' in the tailored text does not appear anywhere in the foundational resume.",
             "fix": "Confirm against the Locked Facts Registry; this figure has no traceable source.",
         }
         for number in untraceable

@@ -44,7 +44,7 @@ from app.config import (
 class Phase(IntEnum):
     STARTING_POINT = 0
     AUDIT = 1
-    MASTER_BUILD = 2
+    FOUNDATIONAL_BUILD = 2
     SLOP_AUDIT = 3
     FORMATTING = 4
     FIT_CHECK = 5
@@ -191,7 +191,7 @@ class Session:
     registry: Dict[str, Fact] = field(default_factory=dict)
     findings: List[Finding] = field(default_factory=list)
     limit_overrides: List[LimitOverride] = field(default_factory=list)
-    master_fingerprint: Optional[str] = None  # T-2.19
+    foundational_fingerprint: Optional[str] = None  # T-2.19
     fit_check_gaps: List[str] = field(default_factory=list)  # T-6.15: carried into the cover letter
     fit_check_completed: bool = False  # T-5.1: must be true before Tailoring
     jd_text: Optional[str] = None  # T-6.1: current pasted job description

@@ -218,29 +218,29 @@ import base64
 
 from app.enforcement import EnforcementKind, ToolResult, tool
 from app.gates import GateBlocked, require_gap_not_silently_removed, require_no_open_criticals
-from app.tools.formatting import _MASTER_RE
+from app.tools.formatting import _FOUNDATIONAL_RE
 
 
 def _is_deliverable(filename: str) -> bool:
     """Whether rendering this filename constitutes DELIVERY, the moment
     spec rule 4.4 puts the Phase 8 gates at.
 
-    The master is deliberately excluded. Spec Phase 2 is explicit on
-    both halves of why: "the master is the source document, not a
-    document to send," and Iris "immediately renders the docx" on
-    Master Build completion, which happens long before Final Review.
-    Gating every render would therefore break Phase 2 outright for a
-    real and common case: a Phase 1 Critical that the user acknowledged
-    with a stated reason satisfies require_phase1_disposition but is
-    still counted by open_criticals(), since dispositioned is not
-    dismissed. Those users would have been unable to render a master at
-    all.
+    The foundational resume is deliberately excluded. Spec Phase 2 is
+    explicit on both halves of why: "the foundational resume is the
+    source document, not a document to send," and Iris "immediately
+    renders the docx" on Foundational Build completion, which happens
+    long before Final Review. Gating every render would therefore break
+    Phase 2 outright for a real and common case: a Phase 1 Critical that
+    the user acknowledged with a stated reason satisfies
+    require_phase1_disposition but is still counted by
+    open_criticals(), since dispositioned is not dismissed. Those users
+    would have been unable to render a foundational resume at all.
 
-    Anything not recognizable as a master is treated as a deliverable,
-    so an unrecognized filename fails closed rather than slipping past
-    the gate. check_filename_pattern (T-4.13) is what should have
-    rejected it before reaching here."""
-    return not _MASTER_RE.match(filename.strip())
+    Anything not recognizable as a foundational resume is treated as a
+    deliverable, so an unrecognized filename fails closed rather than
+    slipping past the gate. check_filename_pattern (T-4.13) is what
+    should have rejected it before reaching here."""
+    return not _FOUNDATIONAL_RE.match(filename.strip())
 
 
 @tool(

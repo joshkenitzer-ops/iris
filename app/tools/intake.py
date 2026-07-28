@@ -448,7 +448,7 @@ def route_low_confidence_to_manual_review(extraction_passed: bool, tripped_signa
 
 
 # ---------------------------------------------------------------------------
-# T-9.14: get current date for master resume filename generation
+# T-9.14: get current date for foundational resume filename generation
 # ---------------------------------------------------------------------------
 
 
@@ -456,12 +456,13 @@ def route_low_confidence_to_manual_review(extraction_passed: bool, tripped_signa
     id="T-9.14",
     name="get_todays_date",
     description=(
-        "Returns today's date in YYYY-MM-DD format for use in master "
-        "resume filenames. The spec requires the master resume to use "
-        "the current date at generation time, not any date embedded in "
-        "the user's uploaded source document. Always call this tool "
-        "when constructing the master resume filename rather than "
-        "deriving a date from the uploaded file."
+        "Returns today's date in YYYY-MM-DD format for use in "
+        "foundational resume filenames. The spec requires the "
+        "foundational resume to use the current date at generation "
+        "time, not any date embedded in the user's uploaded source "
+        "document. Always call this tool when constructing the "
+        "foundational resume filename rather than deriving a date from "
+        "the uploaded file."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={"type": "object", "properties": {}},
@@ -725,7 +726,7 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
         "T-3.17 (nominate_tense_inconsistency_candidates) is the one Phase "
         "1 check NOT included here — it needs a specific role-block excerpt "
         "plus is_current_role per call, so call it directly, once per role. "
-        "For Phase 2 (Master Build), once per section: "
+        "For Phase 2 (Foundational Build), once per section: "
         "tool_ids=[T-2.2,T-2.4,T-2.7,T-2.8,T-2.11,T-6.6], "
         "inputs={lead_text, summary_text, headline_skills, section_order, "
         "text, known_internal_names, bullets} — one shared dict per "
@@ -754,7 +755,7 @@ def check_missing_required_sections(present_sections: List[str]) -> ToolResult:
         "registry fact per batch; call again for another), text or roles "
         "(T-8.8, the tailored content — a list of {text, label} role dicts "
         "reads better than one flat string when checking role-by-role), "
-        "tailored_text, master_text (T-8.9)}. attachment_id covers T-8.5, "
+        "tailored_text, foundational_text (T-8.9)}. attachment_id covers T-8.5, "
         "T-8.6, T-8.7, T-8.12, T-8.13 (docx-based); the rest read drafted "
         "content the model already has in hand, same as T-8.2. The Team "
         "Lead pass (T-8.3, T-8.16, T-8.17) is a separate second turn per "

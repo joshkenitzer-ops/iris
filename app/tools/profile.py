@@ -12,7 +12,7 @@ survives integrity is actually shaped like a profile the harness
 understands. Editing the file by hand doesn't trip either check, on
 purpose, the registry constrains the model during tailoring, not the
 user, who already owns the facts and could type a wrong number at
-Master Build regardless of this file's format.
+Foundational Build regardless of this file's format.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def _build_payload(session: Session) -> Dict[str, Any]:
             for f in session.findings
             if f.dismissed
         ],
-        "master_fingerprint": session.master_fingerprint,
+        "foundational_fingerprint": session.foundational_fingerprint,
     }
 
 
@@ -54,7 +54,7 @@ def _build_payload(session: Session) -> Dict[str, Any]:
     name="export_iris_profile",
     description=(
         "Serializes the session's registry, dismissed findings, and "
-        "master fingerprint into a downloadable markdown file with an "
+        "foundational-resume fingerprint into a downloadable markdown file with an "
         "embedded JSON payload and checksum. Stores the file "
         "server-side and returns a file_id the user can download from "
         "the UI — the profile is used to restore full session state at "
@@ -216,7 +216,7 @@ _FACT_FIELDS = {f.name for f in fields(Fact)}
         "Refuses to overwrite a session that already has facts, so a "
         "profile import cannot silently discard work in progress. "
         "Restoring facts is not the same as verifying them: follow with "
-        "check_facts_traceable_to_master (T-2.17) once the master is "
+        "check_facts_traceable_to_foundational (T-2.17) once the foundational resume is "
         "uploaded, which is what confirms a rehydrated registry still "
         "matches the document it came from."
     ),
@@ -229,16 +229,16 @@ _FACT_FIELDS = {f.name for f in fields(Fact)}
                 "description": "The 'registry' list from import_iris_profile's validated payload.",
                 "items": {"type": "object"},
             },
-            "master_fingerprint": {
+            "foundational_fingerprint": {
                 "type": "string",
-                "description": "The payload's 'master_fingerprint', if present. Restored alongside the facts.",
+                "description": "The payload's 'foundational_fingerprint', if present. Restored alongside the facts.",
             },
         },
         "required": ["registry"],
     },
     needs_session=True,
 )
-def restore_registry_from_profile(registry: List[dict], session: Session, master_fingerprint: str = "") -> ToolResult:
+def restore_registry_from_profile(registry: List[dict], session: Session, foundational_fingerprint: str = "") -> ToolResult:
     """The missing half of profile import.
 
     export_iris_profile has always serialized the registry, and
@@ -253,7 +253,7 @@ def restore_registry_from_profile(registry: List[dict], session: Session, master
     guards transport rather than tampering, by design (see this module's
     docstring). That is deliberate, the user owns their own facts, and
     T-2.17 is the check that a restored registry still traces to a real
-    master."""
+    foundational resume."""
     if session.active_facts():
         return ToolResult(
             passed=False,
@@ -294,9 +294,9 @@ def restore_registry_from_profile(registry: List[dict], session: Session, master
     # The fingerprint travels in the same payload and is the other half
     # of "where I left off": without it T-2.19's own check
     # (check_profile_fingerprint) has nothing to compare a re-uploaded
-    # master against.
-    if master_fingerprint and master_fingerprint.strip():
-        session.master_fingerprint = master_fingerprint.strip()
+    # foundational resume against.
+    if foundational_fingerprint and foundational_fingerprint.strip():
+        session.foundational_fingerprint = foundational_fingerprint.strip()
 
     return ToolResult(
         passed=len(skipped) == 0,
@@ -304,7 +304,7 @@ def restore_registry_from_profile(registry: List[dict], session: Session, master
         data={
             "restored_count": restored,
             "skipped_count": len(skipped),
-            "master_fingerprint_restored": bool(master_fingerprint and master_fingerprint.strip()),
+            "foundational_fingerprint_restored": bool(foundational_fingerprint and foundational_fingerprint.strip()),
         },
     )
 
@@ -388,26 +388,26 @@ def apply_dismissed_findings(dismissed_findings: List[dict], session: Session) -
 
 @tool(
     id="T-2.17",
-    name="check_facts_traceable_to_master",
+    name="check_facts_traceable_to_foundational",
     description=(
-        "Given an uploaded master's text, checks that every active "
+        "Given an uploaded foundational resume's text, checks that every active "
         "registry fact's value still appears in it. This is "
         "verification, not extraction: it confirms a rehydrated "
-        "registry still traces to the master the user just uploaded, "
+        "registry still traces to the foundational resume the user just uploaded, "
         "rather than attempting to re-derive facts from scratch via "
-        "NLP, which the fact model treats as a Master Build step, not "
+        "NLP, which the fact model treats as a Foundational Build step, not "
         "an automatic one."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={
         "type": "object",
-        "properties": {"master_text": {"type": "string"}},
-        "required": ["master_text"],
+        "properties": {"foundational_text": {"type": "string"}},
+        "required": ["foundational_text"],
     },
     needs_session=True,
 )
-def check_facts_traceable_to_master(master_text: str, session: Session) -> ToolResult:
-    lowered = master_text.lower()
+def check_facts_traceable_to_foundational(foundational_text: str, session: Session) -> ToolResult:
+    lowered = foundational_text.lower()
     findings = []
     for fact in session.active_facts():
         present = fact.value.lower() in lowered or any(v.lower() in lowered for v in fact.variants)
@@ -415,8 +415,8 @@ def check_facts_traceable_to_master(master_text: str, session: Session) -> ToolR
             findings.append(
                 {
                     "severity": "Medium",
-                    "issue": f"Registry fact '{fact.id}' (value '{fact.value}') was not found in the uploaded master.",
-                    "fix": "Confirm this fact still applies, or mark it superseded if the master has changed.",
+                    "issue": f"Registry fact '{fact.id}' (value '{fact.value}') was not found in the uploaded foundational resume.",
+                    "fix": "Confirm this fact still applies, or mark it superseded if the foundational resume has changed.",
                 }
             )
     return ToolResult(passed=len(findings) == 0, findings=findings)

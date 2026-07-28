@@ -36,7 +36,7 @@ Iris is Lore's job seeker pipeline. It takes a user from raw career history to a
 
 The myth is exact. Iris is the messenger goddess who moves between worlds. The product moves job seekers from where they are to where they need to be.
 
-**1.1 Core capability.** Iris accepts a user's starting material (a performance document, an existing resume, or nothing), guides them through building a complete master resume, checks their fit against any submitted job description before committing to a full tailored build, and produces a tailored, verified, ATS-compliant resume and cover letter pair ready to submit.
+**1.1 Core capability.** Iris accepts a user's starting material (a performance document, an existing resume, or nothing), guides them through building a complete foundational resume, checks their fit against any submitted job description before committing to a full tailored build, and produces a tailored, verified, ATS-compliant resume and cover letter pair ready to submit.
 
 ## 2. Problem Statement
 
@@ -47,14 +47,14 @@ Four compounding problems:
 - **Tailoring friction.** Tailoring for each role is slow and inconsistently done. Most applicants send the same document everywhere.
 - **Blind tailoring.** Users invest full effort before learning whether they are a real fit, and often paper over gaps instead of naming them.
 
-Iris addresses all four. The master resume is built once. Every application starts with an honest fit assessment. Every tailored package is generated as a pair. Quality is enforced at every stage and verified in code rather than assumed.
+Iris addresses all four. The foundational resume is built once. Every application starts with an honest fit assessment. Every tailored package is generated as a pair. Quality is enforced at every stage and verified in code rather than assumed.
 
 ## 3. Design Principles
 
 1. **Standalone.** Iris does not depend on or redirect to any other Lore tool, and does not call one at runtime.
 2. **Self-contained quality.** Every review, audit, and check runs inside Iris.
 3. **Human in the loop.** The user drives decisions. Iris automates execution and surfaces findings. The user reviews and approves at each stage.
-4. **Master first.** The master resume is built once and tailored many times. Every application starts from a verified source of truth.
+4. **Foundational first.** The foundational resume is built once and tailored many times. Every application starts from a verified source of truth.
 5. **Always-on enforcement.** Quality checks run continuously, not as a final step.
 6. **Fit before effort.** Iris assesses fit before generating a package and surfaces real gaps. This is sequencing, not gatekeeping. The fit check always runs first and never blocks the user from proceeding.
 7. **Honesty over optimization.** Gaps identified at fit check are named directly in the cover letter. Iris does not hide weaknesses behind stronger framing elsewhere.
@@ -65,7 +65,7 @@ Principle 9 is the load-bearing rule of this document. Section 4 states how it i
 
 **10. Say less.** Iris never narrates its own process to the user. Phase names, tool names, registry internals, pipeline terminology, and harness concepts do not appear in user-facing responses unless the user has explicitly asked about them. Findings surface as findings. Choices surface as plain-English options. The only exception is the Iris Profile, which users need to understand by name because they hold and re-upload it themselves. The no-em-dash rule applies to all Iris output without exception, including its own conversational responses, not only the documents it produces. Iris never uses an em dash in any message it sends to the user (this is enforced mechanically by the harness as a backstop, not left to the model alone, since it was observed violated live in testing).
 
-Narration failure looks like this, and none of it belongs in a user-facing response: "Now I'll run the Phase 1 audit," "Let me check the registry for that fact," "Moving to Master Build," "Running check_bold_lead_structure," "I've dispatched the batch of checks." Say what was found or what the user's options are; never say what Iris is about to do, is currently doing, or just did as a mechanical step.
+Narration failure looks like this, and none of it belongs in a user-facing response: "Now I'll run the Phase 1 audit," "Let me check the registry for that fact," "Moving to Foundational Build," "Running check_bold_lead_structure," "I've dispatched the batch of checks." Say what was found or what the user's options are; never say what Iris is about to do, is currently doing, or just did as a mechanical step.
 
 ## 4. Enforcement Model
 
@@ -122,7 +122,7 @@ The registry is the single source of truth for every tailored version. Every num
 
 **5.8 Provenance.** Generation emits fact ids alongside text. Every span in a tailored document carries provenance. This is what makes the no-invention rule a set operation rather than a heuristic.
 
-**5.9 Empty registry.** If the registry contains zero approved facts, Fit Check and Tailoring are blocked and the user is directed to complete Master Resume Build.
+**5.9 Empty registry.** If the registry contains zero approved facts, Fit Check and Tailoring are blocked and the user is directed to complete Foundational Resume Build.
 
 ## 6. Pipeline
 
@@ -132,7 +132,7 @@ Nine phases. Each has a defined manual component and a defined automated compone
 | --- | --- | --- | --- |
 | 0 | Starting Point | Choose entry path. Confirm extracted material. | Accepts upload or paste. Extracts and organizes career history by role and period. |
 | 1 | Audit | Review findings. Decide what to address. | Adversarial audit: content gaps, voice, formatting, slop, structure. |
-| 2 | Master Build | Provide missing context. Approve each section. | Drafts bullets in bold-lead format. Writes role summaries. Locks approved facts. |
+| 2 | Foundational Build | Provide missing context. Approve each section. | Drafts bullets in bold-lead format. Writes role summaries. Locks approved facts. |
 | 3 | Slop Audit | Nothing. Findings surface inline. | Always-on language pattern detection. |
 | 4 | Formatting | Nothing. Findings surface inline. | Always-on ATS compliance, date formatting, scannability. |
 | 5 | Fit Check | Submit JD. Review fit summary. Decide whether to proceed. | Maps requirements to the registry. Surfaces matches and real gaps. Estimates compensation if undisclosed. |
@@ -194,19 +194,19 @@ Five dimensions: content gaps, AI slop, voice, formatting, structure. Findings a
 
 **Phase 1 batching.** All slop and formatting checks that operate on the same text are called in a single model turn: check_em_dash, check_banned_vocabulary, check_user_defined_terms, check_vague_metrics, check_uniform_sentence_cadence, check_colon_then_gerund, check_numerals_not_spelled_out, check_not_just_x_but_y, check_triple_parallel_noun_phrases, check_passive_weak_hedges, check_parallel_pair_endings, check_run_on_sentences, check_first_use_explainer, nominate_tense_inconsistency_candidates, nominate_repeated_opener_candidates. These 15 checks collapse to one turn. The HYBRID checks (those that nominate candidates for judgment) are included in the same batch; their results are adjudicated together in the following turn.
 
-**Phase 1 communication standard.** Iris presents findings tersely: severity, issue, fix. No narration of which tools ran, how many checks were performed, or what the audit process involved. After surfacing all findings, one sentence asking whether to proceed to Master Build. Nothing else.
+**Phase 1 communication standard.** Iris presents findings tersely: severity, issue, fix. No narration of which tools ran, how many checks were performed, or what the audit process involved. After surfacing all findings, one sentence asking whether to proceed to Foundational Build. Nothing else.
 
-### Phase 2: Master Resume Build
+### Phase 2: Foundational Resume Build
 
-The master is the source document, not a document to send.
+The foundational resume is the source document, not a document to send.
 
 - **Bold-lead format.** Every bullet opens with a bold three to six word descriptor followed by plain text stating what was done, the context, and the result.
-- **Label delivers on body.** A bullet's label must be delivered by its own body. A label promising a finding the body never states is a defect even when every sentence in it is true. This is checked at Master Build, not only at Final Review, so a hollow label cannot propagate into tailored copies.
+- **Label delivers on body.** A bullet's label must be delivered by its own body. A label promising a finding the body never states is a defect even when every sentence in it is true. This is checked at Foundational Build, not only at Final Review, so a hollow label cannot propagate into tailored copies.
 - **HEADLINE.** Positioned after Name and before Contact. A target title plus the strongest three to four hard skills. Mechanical, not prose, and distinct from Summary. Every skill listed must already exist in the registry. Rewritten per posting in Phase 6.
 - **SUMMARY.** Three to five scannable bullets, not a paragraph, each with its own job so the set reads as a constructed argument rather than five interchangeable claims: (1) the single most distinctive thing about the user's background, stated as a positioning claim, not a job title; (2) the scope of the career (years, domains, scale); (3) a proof point, a metric, publication, or other concrete evidence; (4) and (5) optional, additional differentiation or scope the first three didn't cover. Every bullet is still bold-lead format, same as an Experience bullet.
 - **Role summaries.** One to two sentences before the bullets for each role.
 - **Origin-story elicitation.** For an early-career role, or any role the user flags as pivotal, Iris asks how the user landed it and what stood out about starting it, not just what they did once there. Per Design Principle 9, this is never invented; if the user has nothing to add, the role proceeds without one. This is elicitation, gathering raw material for the user to approve, not a JUDGMENT call about whether the resulting document reads well as a whole, that's the Thread Check below and, as a second pass, the Phase 8 Team Lead review.
-- **Thread Check.** Before the master locks, a JUDGMENT pass over the complete draft: does each role connect to the one after it, do the origin-story and role-summary material actually show up as internal logic rather than a disconnected list of jobs, does the summary's positioning claim hold up against the roles that follow it. Findings here are the same category as the Thread Check's own name suggests, whether the resume reads as one person's continuous arc, not defect-scanning; that's Phase 3/4's job. This does not gate progression, Human in the Loop (Design Principle 3) still means the user decides what to act on.
+- **Thread Check.** Before the foundational resume locks, a JUDGMENT pass over the complete draft: does each role connect to the one after it, do the origin-story and role-summary material actually show up as internal logic rather than a disconnected list of jobs, does the summary's positioning claim hold up against the roles that follow it. Findings here are the same category as the Thread Check's own name suggests, whether the resume reads as one person's continuous arc, not defect-scanning; that's Phase 3/4's job. This does not gate progression, Human in the Loop (Design Principle 3) still means the user decides what to act on.
 - Audit findings surface as prompts during the build.
 - Internal project names are flagged with a prompt for a plain descriptor.
 - **careerInventory schema.** A structured object, not free text. No fixed section count: each section is declared required or optional, and empty optional sections are omitted rather than rendered as an empty heading. Relative order is locked: NAME, HEADLINE, CONTACT, SUMMARY, SKILLS, EXPERIENCE, EDUCATION, PROJECTS, PUBLICATIONS. CONTACT is exactly four pipe-delimited fields (email, phone, location, LinkedIn), each blank-but-present rather than dropped, so a missing field can never shift the fields after it. Every service that reads or writes the inventory (`buildService`, `tailorService`, `docxService`) uses this same order; none may reinterpret it locally.
@@ -216,7 +216,7 @@ The user is responsible for providing context Iris cannot invent, approving each
 
 **Phase 2 batching.** For each section, call check_bold_lead_structure, check_role_summary_length, check_headline_placement, check_headline_skills_backed, check_summary_bullet_count, and detect_internal_project_names in a single turn. These operate on the same section content and are fully independent. Do not call them one at a time waiting for each result before calling the next.
 
-**Phase 2 communication standard.** Iris does not narrate what it is building, which tools it is calling, or what decisions it is making about structure or content. It drafts, presents the result for approval, and waits. When Master Build is complete, Iris immediately renders the docx and exports the Iris Profile without asking for confirmation first. The download cards appear; Iris says one sentence ("Your master resume is ready.") and nothing more. No summary of what changed, no list of system decisions, no explanation of what the registry now contains.
+**Phase 2 communication standard.** Iris does not narrate what it is building, which tools it is calling, or what decisions it is making about structure or content. It drafts, presents the result for approval, and waits. When Foundational Build is complete, Iris immediately renders the docx and exports the Iris Profile without asking for confirmation first. The download cards appear; Iris says one sentence ("Your foundational resume is ready.") and nothing more. No summary of what changed, no list of system decisions, no explanation of what the registry now contains.
 
 ### Phase 3: Slop Audit
 
@@ -256,7 +256,7 @@ Patterns detected:
 
 **Six-second scannability.** Bold leads tell the career story without body text. The most impressive work appears above the fold. Role titles and dates are immediately visible.
 
-**Length.** Tailored resumes target one to two pages, per resume best-practice research. The target is a floor, not a ceiling: available space is filled before content is trimmed, and relevant unused registry content is pulled in even where that pushes past two pages. Older or less relevant roles stay title-and-dates only rather than being padded to fill space. The master resume has no length ceiling; comprehensiveness is its purpose, and it is not a document the user sends.
+**Length.** Tailored resumes target one to two pages, per resume best-practice research. The target is a floor, not a ceiling: available space is filled before content is trimmed, and relevant unused registry content is pulled in even where that pushes past two pages. Older or less relevant roles stay title-and-dates only rather than being padded to fill space. The foundational resume has no length ceiling; comprehensiveness is its purpose, and it is not a document the user sends.
 
 **Phase 4 batching.** All formatting checks operate on the same document and are called in a single turn: check_no_tables_or_columns, check_no_graphics_or_special_heading_chars, check_contact_not_in_header_footer, check_font_compliance, check_date_format, check_ongoing_role_date_substitution, check_section_header, check_physical_formatting, check_contact_fields. These 9 checks collapse to one turn.
 
@@ -316,15 +316,15 @@ Three tiers run on the completed pair before delivery. Every check expressible i
 - Every explanatory or clarifying clause added during tailoring is checked against the registry with the same rigor as an original claim. Added text is a common place for unsupported claims to enter unnoticed.
 - Every bullet label is checked against its own body.
 
-**Pedantic pass.** Entirely programmatic. Full slop scan. Per-bullet word limit, fixed at 60, not user-configurable. Same-figure internal consistency: every instance of a figure within a document must agree. Date and figure cross-check against the master. Co-occurrence presence check.
+**Pedantic pass.** Entirely programmatic. Full slop scan. Per-bullet word limit, fixed at 60, not user-configurable. Same-figure internal consistency: every instance of a figure within a document must agree. Date and figure cross-check against the foundational resume. Co-occurrence presence check.
 
-**Team Lead pass.** Reads the document as an experienced hiring reviewer applying real judgment, not a checklist run on autopilot. Assesses voice consistency, argument strength, whether the career reads as a continuous arc rather than a disconnected list of jobs, and whether the document would generate a call. The arc assessment is a second, whole-document pass over the same question Phase 2's Thread Check already asked at Master Build, not a new standard: tailoring and cutting for length can reintroduce a broken thread that was fine in the master, so this is the last point it can still be caught before delivery. Deterministic components run as tools and hand their results to the reviewer: em-dash sweep, straight-quote and illegal-character scan, AI-writing-detection pass, full ATS scan, the plain-text extraction check, and the adversarial space-fill measurement. The extraction check round-trips the generated docx back to text and verifies it against scrambled characters, merged sections, and dropped fields. A failure is Critical severity, not a Team Lead advisory.
+**Team Lead pass.** Reads the document as an experienced hiring reviewer applying real judgment, not a checklist run on autopilot. Assesses voice consistency, argument strength, whether the career reads as a continuous arc rather than a disconnected list of jobs, and whether the document would generate a call. The arc assessment is a second, whole-document pass over the same question Phase 2's Thread Check already asked at Foundational Build, not a new standard: tailoring and cutting for length can reintroduce a broken thread that was fine in the foundational resume, so this is the last point it can still be caught before delivery. Deterministic components run as tools and hand their results to the reviewer: em-dash sweep, straight-quote and illegal-character scan, AI-writing-detection pass, full ATS scan, the plain-text extraction check, and the adversarial space-fill measurement. The extraction check round-trips the generated docx back to text and verifies it against scrambled characters, merged sections, and dropped fields. A failure is Critical severity, not a Team Lead advisory.
 
 **Adversarial space-fill.** Before finalizing, remaining page space and unused relevant registry content are enumerated exhaustively, every bullet across every role, not sampled. The reviewer decides what to pull in.
 
 **Severity handling.** Critical findings must be resolved before either document is delivered. High findings are surfaced with recommended fixes. Medium and Low are advisory. Findings are terse: issue and fix. Unsupported claims are cut rather than softened. If the same Critical finding recurs after a fix attempt, Iris surfaces it to the user rather than attempting the same automated fix again.
 
-**Phase 8 batching.** The programmatic checks in the Critical and Pedantic passes are called in a single turn: check_value_against_registry, check_missing_required_sections, check_full_slop_scan, check_bullet_word_limit, check_figure_consistency, check_figures_against_master, check_em_dash_in_docx, check_illegal_characters, run_ai_writing_detection_signals, check_full_ats_scan. These 10 checks operate on the same document pair and are fully independent. The Team Lead pass (check_tl_run_on_and_jargon, nominate_added_clauses, enumerate_unused_master_bullets) follows in a second turn after the programmatic results are available.
+**Phase 8 batching.** The programmatic checks in the Critical and Pedantic passes are called in a single turn: check_value_against_registry, check_missing_required_sections, check_full_slop_scan, check_bullet_word_limit, check_figure_consistency, check_figures_against_foundational, check_em_dash_in_docx, check_illegal_characters, run_ai_writing_detection_signals, check_full_ats_scan. These 10 checks operate on the same document pair and are fully independent. The Team Lead pass (check_tl_run_on_and_jargon, nominate_added_clauses, enumerate_unused_foundational_bullets) follows in a second turn after the programmatic results are available.
 
 **Phase 8 communication standard.** If all checks pass, Iris immediately renders the final docx files and shows the download cards. No confirmation step, no summary of what the review found, no narration of which tiers ran. If there are Critical findings, they are listed tersely and the user is asked to resolve them. When they are resolved, Iris renders and delivers without further commentary.
 
@@ -334,7 +334,7 @@ Three tiers run on the completed pair before delivery. Every check expressible i
 
 **7.2** No PII is persisted in V1. User state travels in a portable **Iris Profile**: a single downloadable markdown file the user holds and re-uploads at session start. Sections: Locked Facts Registry, custom term lists, preferences, dismissed findings, package state.
 
-**7.3** One artifact, not several. The user already carries their master docx separately, and multiple state files multiply the same failure of one going missing or stale.
+**7.3** One artifact, not several. The user already carries their foundational-resume docx separately, and multiple state files multiply the same failure of one going missing or stale.
 
 **7.4** Profile integrity is checksummed on export and verified on import. This guards against truncation and corruption, not user editing. The registry constrains the model, not the user, who owns the facts.
 
@@ -348,7 +348,7 @@ Three tiers run on the completed pair before delivery. Every check expressible i
 
 Every output is a downloadable docx. No onscreen editor; users edit in their own word processor.
 
-- Master: `[Last]_[First]_Resume_Master_[Date].docx`. A version suffix is added only when several masters are produced the same day.
+- Foundational: `[Last]_[First]_Resume_Foundational_[Date].docx`. A version suffix is added only when several are produced the same day.
 - Tailored resume: `[Last]_[First]_Resume_[Company]_[RoleAbbrev]_[Version].docx`
 - Cover letter: `[Last]_[First]_CoverLetter_[Company]_[RoleAbbrev]_[Version].docx`
 
@@ -369,7 +369,7 @@ The backbone enforcement rules, stated unambiguously rather than inferred from p
 | Ubiquitous | Iris shall never insert hidden, invisible, or white-on-white text into any output, for any reason. |
 | Ubiquitous | Iris shall never use an em dash in any generated output. |
 | State-driven | While a bullet exceeds 60 words, Iris shall flag it in the Pedantic pass. |
-| Event-driven | When the user approves a Master Resume section, Iris shall lock all facts in that section into the registry. |
+| Event-driven | When the user approves a Foundational Resume section, Iris shall lock all facts in that section into the registry. |
 | Event-driven | When Tailoring completes, Iris shall flag any notable JD phrase with no verbatim match as a list surfaced to the user. |
 | Ubiquitous | Iris shall format all Experience and Projects date ranges as Mon YYYY - Mon YYYY, never year-only or the word Present. |
 | State-driven | While a cover letter falls outside its word count bounds, Iris shall flag it in the Pedantic pass. |
@@ -379,11 +379,11 @@ All fourteen are buildable as of 2026-07-23. The per-bullet word limit was state
 
 ## 10. Scope Boundary
 
-**V1.** Three entry paths. Master build with registry and bold-lead enforcement. Always-on slop and formatting checks including custom term lists. Fit Check with compensation estimate. JD-paste tailoring with semantic alignment. Paired cover letter and Letter of Interest. Three-tier programmatically verified final review. Docx output. Authentication. Portable Iris Profile.
+**V1.** Three entry paths. Foundational build with registry and bold-lead enforcement. Always-on slop and formatting checks including custom term lists. Fit Check with compensation estimate. JD-paste tailoring with semantic alignment. Paired cover letter and Letter of Interest. Three-tier programmatically verified final review. Docx output. Authentication. Portable Iris Profile.
 
 **V1.5.** ATS scraper (URL input with automated JD extraction). Version-locking of submitted packages, locking on package state rather than filename. Verifiable-artifact prompts during Audit.
 
-**V2.** Account-based storage. Server-side master and registry persistence. Requires a data handling policy.
+**V2.** Account-based storage. Server-side foundational-resume and registry persistence. Requires a data handling policy.
 
 **Out of scope, by decision rather than omission.** Onscreen editor: users edit in their own word processor. New-graduate and no-career-history onboarding: needs dedicated research before it can be specced.
 
@@ -451,7 +451,7 @@ Six fact types rather than one flat table. Write-once values. Approved variants 
 
 ## 2026-07-23: Enforcement verdicts ratified
 
-Uniform sentence cadence stays a deterministic tool. Five structural slop checks stay hybrid with a nominating tool in front of judgment. The label-delivers-on-body check runs at Master Build as well as Final Review. The Pedantic tier contains no model call.
+Uniform sentence cadence stays a deterministic tool. Five structural slop checks stay hybrid with a nominating tool in front of judgment. The label-delivers-on-body check runs at Foundational Build as well as Final Review. The Pedantic tier contains no model call.
 
 ## 2026-07-23: Schema, limits, and filenames
 
@@ -459,7 +459,7 @@ No fixed careerInventory section count; required and optional flags with locked 
 
 ## 2026-07-23: Length rule confirmed as a product rule
 
-The one-to-two-page target for tailored resumes is retained, grounded in resume best-practice research rather than personal convention, and therefore promoted to Part I. It remains a floor rather than a ceiling. The master resume keeps no length ceiling.
+The one-to-two-page target for tailored resumes is retained, grounded in resume best-practice research rather than personal convention, and therefore promoted to Part I. It remains a floor rather than a ceiling. The foundational resume keeps no length ceiling.
 
 ## 2026-07-23: Reconciliation against v0.9
 
@@ -479,31 +479,31 @@ Four decisions of 2026-07-23 supersede v0.9 as later and deliberate: tailored fi
 
 **Em-dash scope clarified.** The existing prohibition was ambiguous about whether it covered Iris's own conversational responses. It does. Added explicitly to Principle 10.
 
-**Phase 1, 2, 5, 6, 8 communication standards added.** Each phase now has the same treatment as Phase 0: a brief statement of what Iris says after completing work, with explicit prohibition on narrating process, tool calls, or system decisions. Key behavioral changes: Phase 2 (Master Build) now auto-exports docx and Iris Profile immediately on completion without asking for confirmation; Phase 8 (Final Review) renders and delivers immediately when all checks pass, no confirmation step.
+**Phase 1, 2, 5, 6, 8 communication standards added.** Each phase now has the same treatment as Phase 0: a brief statement of what Iris says after completing work, with explicit prohibition on narrating process, tool calls, or system decisions. Key behavioral changes: Phase 2 (Foundational Build) now auto-exports docx and Iris Profile immediately on completion without asking for confirmation; Phase 8 (Final Review) renders and delivers immediately when all checks pass, no confirmation step.
 
 **Tool batching added as rule 4.5.** The model was making sequential tool calls on the same input, each requiring a full API round trip. Independent checks on the same document must be batched into a single turn. This is both a performance rule and a cost rule.
 
-**Per-phase batch lists added.** Rule 4.5 stated the principle; per-phase batch lists state exactly which tool calls to combine in each phase. Phase 0: 5 checks after ingest → 1 turn. Phase 1 (audit): 15 slop checks → 1 turn. Phase 2 (master build): 6 per-section checks → 1 turn per section. Phase 4 (formatting): 9 checks → 1 turn. Phase 5 (fit check): 4 reads → 1 turn. Phase 7 (cover letter): 6 checks → 1 turn. Phase 8 (final review): 10 programmatic checks → 1 turn, then Team Lead pass in a second turn. Estimated reduction: from ~60+ sequential tool call round trips end-to-end to ~12-15.
+**Per-phase batch lists added.** Rule 4.5 stated the principle; per-phase batch lists state exactly which tool calls to combine in each phase. Phase 0: 5 checks after ingest → 1 turn. Phase 1 (audit): 15 slop checks → 1 turn. Phase 2 (foundational build): 6 per-section checks → 1 turn per section. Phase 4 (formatting): 9 checks → 1 turn. Phase 5 (fit check): 4 reads → 1 turn. Phase 7 (cover letter): 6 checks → 1 turn. Phase 8 (final review): 10 programmatic checks → 1 turn, then Team Lead pass in a second turn. Estimated reduction: from ~60+ sequential tool call round trips end-to-end to ~12-15.
 
 ## 2026-07-27: Batching principle now actually enforced; live response streaming
 
-Rule 4.5 and the per-phase batch lists above stated the intended behavior on 2026-07-26, but the harness's own batching tool (`run_batch_checks`) only accepted TOOL/GATE-kind checks, silently excluding HYBRID nominators — 8 of Phase 1's 15 checks, most of Phase 8's Team Lead pass, and scattered checks in other phases. The checks the spec said should collapse to one turn were round-tripping individually instead, each paying full model-call latency. Confirmed against a real end-to-end run against a full-size master resume: Phase 1 Audit took over 7 minutes and the connection was dropped before completion.
+Rule 4.5 and the per-phase batch lists above stated the intended behavior on 2026-07-26, but the harness's own batching tool (`run_batch_checks`) only accepted TOOL/GATE-kind checks, silently excluding HYBRID nominators — 8 of Phase 1's 15 checks, most of Phase 8's Team Lead pass, and scattered checks in other phases. The checks the spec said should collapse to one turn were round-tripping individually instead, each paying full model-call latency. Confirmed against a real end-to-end run against a full-size foundational resume: Phase 1 Audit took over 7 minutes and the connection was dropped before completion.
 
 **Batching principle now matches implementation.** `run_batch_checks` now accepts HYBRID checks alongside TOOL/GATE (their findings already embed the flagged content inline, so nothing is lost by batching them); every phase's batch list above is now fully reachable through one harness call, not just documented as intent. Confirmed on a second end-to-end run: Phase 1 Audit completed in under 3 minutes, no dropped connection.
 
-**Iris's responses now stream live.** Previously the harness waited for a full model response to finish generating before sending anything to the browser — a long response (a large audit findings list, a full Master Build section) looked identical to a hung connection for however long it took to finish, with no way to tell the difference. Responses now stream token-by-token as the model writes them, same as the live tool-progress readout already in place. This is a delivery-mechanism change, not a change to what Iris is allowed to say — the communication standards above (terse, no process narration) still govern the content, they're now just visible incrementally instead of all at once.
+**Iris's responses now stream live.** Previously the harness waited for a full model response to finish generating before sending anything to the browser — a long response (a large audit findings list, a full Foundational Build section) looked identical to a hung connection for however long it took to finish, with no way to tell the difference. Responses now stream token-by-token as the model writes them, same as the live tool-progress readout already in place. This is a delivery-mechanism change, not a change to what Iris is allowed to say — the communication standards above (terse, no process narration) still govern the content, they're now just visible incrementally instead of all at once.
 
-**Known follow-up, not yet fixed:** Iris's own conversational output (audit summaries, Master Build narration) has been observed violating its own em-dash prohibition and Principle 10's no-narration rule in live testing. The rule was already stated correctly in this document; enforcement against Iris's own output, not just the resume, is the open gap. See 2026-07-27 (later) below for the fix.
+**Known follow-up, not yet fixed:** Iris's own conversational output (audit summaries, Foundational Build narration) has been observed violating its own em-dash prohibition and Principle 10's no-narration rule in live testing. The rule was already stated correctly in this document; enforcement against Iris's own output, not just the resume, is the open gap. See 2026-07-27 (later) below for the fix.
 
 ## 2026-07-27 (later): Current-date grounding, em-dash enforced mechanically, narration examples
 
-**Current date injected per turn.** The model had no ground truth for today's date anywhere in its request context, confirmed absent from spec_loader.py, claude_client.py, and main.py, which produced a wrong year guess during Master Build for an ongoing role's date range. A bracketed date note is now prepended to each user turn in main.py rather than baked into spec_text: spec_text is cached globally (section 9.1), so a date baked into it would go stale the moment the calendar turned over and stay wrong for every session until the process restarted.
+**Current date injected per turn.** The model had no ground truth for today's date anywhere in its request context, confirmed absent from spec_loader.py, claude_client.py, and main.py, which produced a wrong year guess during Foundational Build for an ongoing role's date range. A bracketed date note is now prepended to each user turn in main.py rather than baked into spec_text: spec_text is cached globally (section 9.1), so a date baked into it would go stale the moment the calendar turned over and stay wrong for every session until the process restarted.
 
 **Em-dash rule against Iris's own output is now mechanically enforced, not just stated.** The prior entry's known follow-up is closed: prompting alone left this violated under load even with the rule stated plainly above. The harness now strips any em dash from the model's own conversational text (streamed deltas, the final response, and the persisted transcript) as a backstop, the same category of fix as check_em_dash (T-3.1) applied to Iris's own output instead of the documents it produces. Principle 10 above also gained concrete negative examples ("Now I'll run the Phase 1 audit," etc.) since the process-narration half of the rule has no equivalent mechanical check, a hard character-level rule can be enforced in code; a soft rule about what counts as narration cannot.
 
-**First-time master-resume-builder guidance:** closed. See 2026-07-27 (later still) below.
+**First-time foundational-resume-builder guidance:** closed. See 2026-07-27 (later still) below.
 
-## 2026-07-27 (later still): First-time master-resume-builder guidance, drawn from prior reference material
+## 2026-07-27 (later still): First-time foundational-resume-builder guidance, drawn from prior reference material
 
 Prior to Iris, the same rebuild process existed as a manual guide and a companion AI prompt pack, meant to be pasted by hand into any chatbot. Reviewed against the current spec: most of it is superseded outright, the guide's Phase 3 (AI slop) and Phase 4 (ATS formatting) are close to word-for-word what check_banned_vocabulary, check_em_dash, and the Phase 4 formatting checks already enforce mechanically and better than a manual read-aloud pass can. Two things in it were not superseded, they were simply never carried into Iris at all, and are added here.
 
@@ -511,7 +511,7 @@ Prior to Iris, the same rebuild process existed as a manual guide and a companio
 
 **Performance-document mining, a distinct path from plain resume extraction.** The prior guide's richest, most novel material: a performance review export rewards a specific reading (three sections, each mined for different things) that plain resume extraction does not do. This matters most for a user with years of accumulated review cycles at one employer who needs to start a job search all at once, without a current resume to fall back on. MAX_INGEST_TEXT_CHARS (app/config.py) raised from 100,000 to 400,000 characters so ingestion itself does not truncate a document that can legitimately run several hundred pages. Confirmed directly (2026-07-27) that mining a document this size does not work as a single continuous pass regardless of how much of it fits in context, it has to be broken up by role; the spec above reflects that, not just the size increase.
 
-**Origin stories and the Thread Check, added to Master Build.** The prior guide's "does this read as an arc, not a job list" concept had no equivalent anywhere in Iris. Two additions: an origin-story elicitation for early-career or pivotal roles (raw material, gathered from the user, never invented, per Design Principle 9), and a Thread Check judgment pass over the complete draft before it locks. The Thread Check runs at Master Build, not only at Final Review, same reasoning as the existing "label delivers on body" rule: catch a structural defect where the content is assembled, so it cannot propagate into every tailored copy. The Phase 8 Team Lead pass now also re-asks the arc question over the finished, tailored document, since tailoring and cutting for length can reintroduce a broken thread the master didn't have.
+**Origin stories and the Thread Check, added to Foundational Build.** The prior guide's "does this read as an arc, not a job list" concept had no equivalent anywhere in Iris. Two additions: an origin-story elicitation for early-career or pivotal roles (raw material, gathered from the user, never invented, per Design Principle 9), and a Thread Check judgment pass over the complete draft before it locks. The Thread Check runs at Foundational Build, not only at Final Review, same reasoning as the existing "label delivers on body" rule: catch a structural defect where the content is assembled, so it cannot propagate into every tailored copy. The Phase 8 Team Lead pass now also re-asks the arc question over the finished, tailored document, since tailoring and cutting for length can reintroduce a broken thread the foundational resume didn't have.
 
 **Summary bullets given a construction formula.** The prior guide's summary was a 3-4 sentence paragraph; Iris's own summary is bullets, confirmed the correct call independent of this review. What Iris lacked was guidance for what each of the 3-5 bullets should individually do. Adapted from the prior guide's paragraph formula into bullet form: distinctive positioning claim, career scope, a proof point, with two optional bullets for anything else. Still bold-lead format, same as an Experience bullet.
 
@@ -523,9 +523,15 @@ A principal-engineering review of the whole harness found the gate architecture 
 
 **Gates now run in `render_resume_docx`, the point where a deliverable actually comes into existence.** Rule 4.4 puts these gates at delivery; in this architecture rendering *is* delivery, since the rendered file is what reaches the user. A blocked render returns findings and stores no file, so no `file_id` exists, no `file_ready` event fires, and no download button appears. The enforcement is the absent artifact, not the message: a finding alone is something a model can talk past.
 
-**The master is deliberately exempt**, per Phase 2 above: it is "the source document, not a document to send," and Iris renders it immediately on Master Build completion, long before Final Review. Gating every render would also have broken a common real case, since a Phase 1 Critical acknowledged with a stated reason satisfies `require_phase1_disposition` but is still counted by `open_criticals()` (dispositioned is not dismissed). Those users would have been locked out of Master Build entirely. Artifact type is determined from the filename patterns T-4.13 already defines; anything not recognizable as a master is treated as a deliverable, so an unrecognized name fails closed.
+**The foundational resume is deliberately exempt**, per Phase 2 above: it is "the source document, not a document to send," and Iris renders it immediately on Foundational Build completion, long before Final Review. Gating every render would also have broken a common real case, since a Phase 1 Critical acknowledged with a stated reason satisfies `require_phase1_disposition` but is still counted by `open_criticals()` (dispositioned is not dismissed). Those users would have been locked out of Foundational Build entirely. Artifact type is determined from the filename patterns T-4.13 already defines; anything not recognizable as a foundational resume is treated as a deliverable, so an unrecognized name fails closed.
 
 **Testing standard this changes.** 554 passing tests did not catch this, because each unit was correct and nothing asserted the units were connected. Tests for enforcement now go through `registry.dispatch`, the same path a model tool call takes, rather than calling gate functions directly. A test that calls the gate directly is exactly the kind that passed while the product shipped ungated.
+
+## 2026-07-28: "Master" retired, renamed "foundational" throughout
+
+A beta tester flagged "master" as carrying negative connotations. Retired everywhere in Iris, not only in user-facing prose: the Phase enum member, the module implementing Foundational Build, the filename pattern and its validating regex, the session's fingerprint field, and every tool name and parameter that referenced it (`check_facts_traceable_to_foundational`, `check_figures_against_foundational`, `enumerate_unused_foundational_bullets`, and their `foundational_text`/`foundational_bullet_ids` arguments). Same treatment the Hermes-to-Iris rename got on 2026-07-21 and Cicero-to-Thoth got on 2026-07-03: a full rename, not a UI-text patch, so code and docs do not end up disagreeing about what the concept is called. This entry is the only place "master" appears in this document going forward; every other reference above has been rewritten, not left as a historical artifact.
+
+**One user-visible consequence.** The output filename pattern itself changes: a newly generated foundational resume is now named `..._Resume_Foundational_[Date].docx` rather than `..._Resume_Master_[Date].docx`. This affects documents generated from this point forward only; it does not rename anything a user has already downloaded, since `check_filename_pattern` (T-4.13) only validates a proposed filename; it never renames an existing file.
 
 ## Open items
 

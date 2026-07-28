@@ -137,7 +137,7 @@ def validate_facts_for_locking(facts: List[Dict[str, Any]]) -> ToolResult:
 )
 def extract_facts_into_registry(facts: List[Dict[str, Any]], session: Session) -> ToolResult:
     from app.gates import GateBlocked
-    from app.tools.master_build import require_value_immutable
+    from app.tools.foundational_build import require_value_immutable
 
     shape_check = validate_facts_for_locking(facts)
     if not shape_check.passed:
@@ -208,7 +208,7 @@ def check_value_against_registry(fact_id: str, claimed_value: str, session: Sess
                 {
                     "severity": "Critical",
                     "issue": f"No registry entry for fact id '{fact_id}'.",
-                    "fix": "Cite an existing fact id, or add this as a new fact through Master Build first.",
+                    "fix": "Cite an existing fact id, or add this as a new fact through Foundational Build first.",
                 }
             ],
         )

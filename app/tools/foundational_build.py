@@ -1,4 +1,4 @@
-"""Phase 2 Master Build tools. See docs/iris-spec.md section 6, Phase 2."""
+"""Phase 2 Foundational Build tools. See docs/iris-spec.md section 6, Phase 2."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def check_headline_skills_backed(headline_skills: List[str], session: Session) -
         {
             "severity": "Critical",
             "issue": f"HEADLINE skill '{skill}' has no matching active fact in the registry.",
-            "fix": "Add it to the registry through Master Build first, or remove it from HEADLINE.",
+            "fix": "Add it to the registry through Foundational Build first, or remove it from HEADLINE.",
         }
         for skill in unbacked
     ]
@@ -223,7 +223,7 @@ def require_value_immutable(session: Session, fact_id: str, proposed_value: str)
     name="detect_internal_project_names",
     description=(
         "Nominates text spans matching a known internal-name list for a "
-        "plain-English descriptor prompt during Master Build. "
+        "plain-English descriptor prompt during Foundational Build. "
         "Informational, not a block, unlike the T-3.15 leak gate that "
         "runs later at delivery against the same kind of list."
     ),
@@ -290,7 +290,7 @@ def check_bold_lead_structure(lead_text: str) -> ToolResult:
     description=(
         "Returns open (not dismissed) findings tagged to a given "
         "careerInventory section, for surfacing as a prompt while the "
-        "user works on that section during Master Build."
+        "user works on that section during Foundational Build."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={

@@ -34,7 +34,7 @@ def _seeded_session() -> Session:
     session = Session(session_id="s", user_id="u")
     session.registry["F1"] = Fact(id="F1", type="metric", value="19 years", statement="19 years at Google")
     session.registry["F2"] = Fact(id="F2", type="claim", value="FSE 2025", statement="Presented at FSE 2025")
-    session.master_fingerprint = "abc123"
+    session.foundational_fingerprint = "abc123"
     return session
 
 
@@ -46,7 +46,7 @@ class TestFullProfileRoundTrip(unittest.TestCase):
         returning = Session(session_id="s2", user_id="u")
         payload = import_iris_profile(check_profile_integrity(markdown).data["json_body"]).data["payload"]
         result = restore_registry_from_profile(
-            payload["registry"], session=returning, master_fingerprint=payload["master_fingerprint"]
+            payload["registry"], session=returning, foundational_fingerprint=payload["foundational_fingerprint"]
         )
 
         self.assertTrue(result.passed)
@@ -69,10 +69,10 @@ class TestFullProfileRoundTrip(unittest.TestCase):
         restore_registry_from_profile(payload["registry"], session=returning)
         require_registry_populated(returning)  # no longer raises
 
-    def test_master_fingerprint_travels_with_the_facts(self) -> None:
+    def test_foundational_fingerprint_travels_with_the_facts(self) -> None:
         returning = Session(session_id="s2", user_id="u")
-        restore_registry_from_profile([], session=returning, master_fingerprint="abc123")
-        self.assertEqual(returning.master_fingerprint, "abc123")
+        restore_registry_from_profile([], session=returning, foundational_fingerprint="abc123")
+        self.assertEqual(returning.foundational_fingerprint, "abc123")
 
 
 class TestRestoreRefusesToClobber(unittest.TestCase):

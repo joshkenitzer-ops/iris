@@ -2,7 +2,7 @@ import threading
 import unittest
 
 from app.session import Session, SessionNotFoundError, SessionStore
-from app.tools.master_build import check_headline_title_match, check_summary_bullet_count
+from app.tools.foundational_build import check_headline_title_match, check_summary_bullet_count
 from app.tools.registry_tools import extract_facts_into_registry
 from app.tools.tailoring import ingest_job_description
 from app.tools.final_review import run_ai_writing_detection_signals

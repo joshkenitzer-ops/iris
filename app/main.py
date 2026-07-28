@@ -114,7 +114,7 @@ def _with_current_date_note(message: str) -> str:
     otherwise has no ground truth for today's date anywhere in its
     request context (confirmed 2026-07-27: none in spec_loader.py,
     claude_client.py, or main.py), which produced a real error during
-    Master Build where it proposed a date range for an ongoing role
+    Foundational Build where it proposed a date range for an ongoing role
     using a wrong year guessed from training data.
 
     "%b %Y" matches the exact format check_ongoing_role_date_substitution
@@ -421,7 +421,7 @@ def get_session(session_id: str, user_id: str = Depends(get_current_user_id)) ->
 
 
 class AdvancePhaseRequest(BaseModel):
-    target_phase: str  # matches a Phase enum name, e.g. "MASTER_BUILD"
+    target_phase: str  # matches a Phase enum name, e.g. "FOUNDATIONAL_BUILD"
 
 
 @app.post("/sessions/{session_id}/advance-phase")
@@ -441,7 +441,7 @@ def advance_phase(
         raise HTTPException(status_code=400, detail=f"Unknown phase: {body.target_phase}") from None
 
     try:
-        if target == Phase.MASTER_BUILD:
+        if target == Phase.FOUNDATIONAL_BUILD:
             require_phase1_disposition(session)
         if target in (Phase.FIT_CHECK, Phase.TAILORING):
             require_registry_populated(session)

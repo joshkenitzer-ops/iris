@@ -6,27 +6,27 @@ from app.tools.final_review import (
     check_tl_run_on_and_jargon,
     nominate_added_clauses,
 )
-from app.tools.profile import check_facts_traceable_to_master
+from app.tools.profile import check_facts_traceable_to_foundational
 from app.tools.registry_tools import get_inventory_section_facts
 
 
-class TestFactsTraceableToMaster(unittest.TestCase):
+class TestFactsTraceableToFoundational(unittest.TestCase):
     def setUp(self) -> None:
         self.session = Session(session_id="s", user_id="u")
         self.session.registry["F-001"] = Fact(id="F-001", type="metric", value="2.5 minutes", statement="AHT.")
 
-    def test_fact_present_in_master_passes(self) -> None:
-        result = check_facts_traceable_to_master("The AHT was reduced to 2.5 minutes.", session=self.session)
+    def test_fact_present_in_foundational_passes(self) -> None:
+        result = check_facts_traceable_to_foundational("The AHT was reduced to 2.5 minutes.", session=self.session)
         self.assertTrue(result.passed)
 
-    def test_fact_missing_from_master_flags_medium(self) -> None:
-        result = check_facts_traceable_to_master("Nothing about AHT here.", session=self.session)
+    def test_fact_missing_from_foundational_flags_medium(self) -> None:
+        result = check_facts_traceable_to_foundational("Nothing about AHT here.", session=self.session)
         self.assertFalse(result.passed)
         self.assertEqual(result.findings[0]["severity"], "Medium")
 
     def test_approved_variant_counts_as_traceable(self) -> None:
         self.session.registry["F-001"].approve_variant("two and a half minutes")
-        result = check_facts_traceable_to_master("Cut it to two and a half minutes.", session=self.session)
+        result = check_facts_traceable_to_foundational("Cut it to two and a half minutes.", session=self.session)
         self.assertTrue(result.passed)
 
 

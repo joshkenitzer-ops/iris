@@ -109,10 +109,10 @@ class TestProfileFingerprint(unittest.TestCase):
     def test_first_upload_sets_fingerprint_and_matches(self) -> None:
         session = Session(session_id="s", user_id="u")
         self.assertTrue(check_profile_fingerprint(session, "abc123"))
-        self.assertEqual(session.master_fingerprint, "abc123")
+        self.assertEqual(session.foundational_fingerprint, "abc123")
 
     def test_mismatch_returns_false_but_never_raises(self) -> None:
-        session = Session(session_id="s", user_id="u", master_fingerprint="abc123")
+        session = Session(session_id="s", user_id="u", foundational_fingerprint="abc123")
         result = check_profile_fingerprint(session, "different-hash")
         self.assertFalse(result)  # T-2.19: warn, never block
 

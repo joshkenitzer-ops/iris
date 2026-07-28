@@ -24,7 +24,7 @@ def _exported_markdown(session: Session) -> str:
 
 class TestProfileExport(unittest.TestCase):
     def setUp(self) -> None:
-        self.session = Session(session_id="s", user_id="u", master_fingerprint="abc123")
+        self.session = Session(session_id="s", user_id="u", foundational_fingerprint="abc123")
         self.session.registry["F-001"] = Fact(id="F-001", type="skill", value="Python", statement="Uses Python.")
         self.session.findings.append(
             Finding(id="f1", tool_id="T-3.14", severity="Low", issue="Self-annotation.", fix="Cut it.", content_signature="sig123", dismissed=True)
@@ -73,7 +73,7 @@ class TestProfileExport(unittest.TestCase):
         imported = import_iris_profile(integrity.data["json_body"])
         self.assertTrue(imported.passed)
         payload = imported.data["payload"]
-        self.assertEqual(payload["master_fingerprint"], "abc123")
+        self.assertEqual(payload["foundational_fingerprint"], "abc123")
         self.assertEqual(len(payload["registry"]), 1)
         self.assertEqual(payload["registry"][0]["value"], "Python")
 

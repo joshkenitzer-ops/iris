@@ -284,7 +284,7 @@ def check_no_invention(spans: List[dict], session: Session) -> ToolResult:
                 {
                     "severity": "Critical",
                     "issue": f"Span cites fact id '{fact_id}', which is not an active registry entry: '{span['text'][:50]}'.",
-                    "fix": "Cite an existing active fact, or add it through Master Build first.",
+                    "fix": "Cite an existing active fact, or add it through Foundational Build first.",
                 }
             )
     return ToolResult(passed=len(findings) == 0, findings=findings)

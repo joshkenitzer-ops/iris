@@ -176,7 +176,14 @@ _TAILORED_RESUME_RE = re.compile(
 _COVER_LETTER_RE = re.compile(
     r"^[\w'-]+_[\w'-]+_CoverLetter_[\w'-]+_[\w'-]+_[Vv]?\d+\.docx$"
 )
-_MASTER_RE = re.compile(r"^[\w'-]+_[\w'-]+_Resume_Master_\d{4}-\d{2}-\d{2}(_v?\d+)?\.docx$")
+# Renamed from _MASTER_RE / "Master" in the filename itself 2026-07-28:
+# a beta tester flagged "master" as carrying negative connotations, so
+# the term is retired everywhere in Iris, not only in prose. This
+# changes what a NEWLY GENERATED filename looks like
+# (..._Resume_Foundational_2026-07-28.docx); it has no effect on files
+# already downloaded under the old pattern, since this tool only
+# validates a proposed filename, it never renames anything that exists.
+_FOUNDATIONAL_RE = re.compile(r"^[\w'-]+_[\w'-]+_Resume_Foundational_\d{4}-\d{2}-\d{2}(_v?\d+)?\.docx$")
 
 
 @tool(
@@ -186,8 +193,8 @@ _MASTER_RE = re.compile(r"^[\w'-]+_[\w'-]+_Resume_Master_\d{4}-\d{2}-\d{2}(_v?\d
         "Validates an output filename against the pattern for its "
         "artifact type. Tailored resume and cover letter filenames "
         "require Last, First, Company, RoleAbbrev, and Version, no "
-        "date. Master filenames require a date and take a version "
-        "suffix only when several are produced the same day."
+        "date. Foundational-resume filenames require a date and take a "
+        "version suffix only when several are produced the same day."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={
@@ -196,7 +203,7 @@ _MASTER_RE = re.compile(r"^[\w'-]+_[\w'-]+_Resume_Master_\d{4}-\d{2}-\d{2}(_v?\d
             "filename": {"type": "string"},
             "artifact_type": {
                 "type": "string",
-                "enum": ["tailored_resume", "cover_letter", "master"],
+                "enum": ["tailored_resume", "cover_letter", "foundational"],
             },
         },
         "required": ["filename", "artifact_type"],
@@ -206,12 +213,12 @@ def check_filename_pattern(filename: str, artifact_type: str) -> ToolResult:
     pattern_by_type = {
         "tailored_resume": (_TAILORED_RESUME_RE, "[Last]_[First]_Resume_[Company]_[RoleAbbrev]_[Version].docx"),
         "cover_letter": (_COVER_LETTER_RE, "[Last]_[First]_CoverLetter_[Company]_[RoleAbbrev]_[Version].docx"),
-        "master": (_MASTER_RE, "[Last]_[First]_Resume_Master_[Date] (version suffix only if several are produced the same day)"),
+        "foundational": (_FOUNDATIONAL_RE, "[Last]_[First]_Resume_Foundational_[Date] (version suffix only if several are produced the same day)"),
     }
     if artifact_type not in pattern_by_type:
         return ToolResult(
             passed=False,
-            findings=[{"severity": "Critical", "issue": f"Unknown artifact_type '{artifact_type}'.", "fix": "Use tailored_resume, cover_letter, or master."}],
+            findings=[{"severity": "Critical", "issue": f"Unknown artifact_type '{artifact_type}'.", "fix": "Use tailored_resume, cover_letter, or foundational."}],
         )
     pattern, expected = pattern_by_type[artifact_type]
     if pattern.match(filename):

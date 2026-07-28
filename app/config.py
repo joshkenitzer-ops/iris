@@ -99,7 +99,7 @@ EFFORT = os.environ.get("IRIS_EFFORT", "medium")
 #
 # Retries raised 2 -> 4 because the asymmetry favors it here. A retry
 # costs a second or two of backoff; a failure surfacing to the user
-# mid-Master-Build costs three minutes of work they then repeat.
+# mid-Foundational-Build costs three minutes of work they then repeat.
 MODEL_MAX_RETRIES = int(os.environ.get("IRIS_MODEL_MAX_RETRIES", "4"))
 
 # Read timeout is time BETWEEN chunks, not total request duration, since
@@ -123,7 +123,7 @@ MODEL_CONNECT_TIMEOUT_SECONDS = 10.0
 # ---------------------------------------------------------------------------
 
 # Longest single user message accepted by /chat.
-MAX_MESSAGE_CHARS = 40_000  # raised from 20_000 — a full master resume
+MAX_MESSAGE_CHARS = 40_000  # raised from 20_000 — a full foundational resume
 # paste (tested at ~31K chars) was hitting the old limit and returning
 # the generic "something went wrong" error. 40K covers large resumes
 # with headroom for JD pastes alongside them.

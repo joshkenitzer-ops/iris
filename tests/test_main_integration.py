@@ -384,16 +384,16 @@ class TestSessionOwnershipOverHttp(_ClientTestCase):
 
 
 class TestAdvancePhaseGate(_AuthOverriddenTestCase):
-    def test_master_build_blocked_by_undispositioned_phase1_critical(self) -> None:
+    def test_foundational_build_blocked_by_undispositioned_phase1_critical(self) -> None:
         session_id = self._create_session()
         session = session_store.get(self.user_id, session_id)
         session.findings.append(Finding(id="f1", tool_id="T-1.1", severity="Critical", issue="x", fix="y"))
 
-        response = self.client.post(f"/sessions/{session_id}/advance-phase", json={"target_phase": "MASTER_BUILD"})
+        response = self.client.post(f"/sessions/{session_id}/advance-phase", json={"target_phase": "FOUNDATIONAL_BUILD"})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["detail"]["gate_id"], "T-1.8")
 
-    def test_master_build_allowed_once_dispositioned(self) -> None:
+    def test_foundational_build_allowed_once_dispositioned(self) -> None:
         session_id = self._create_session()
         session = session_store.get(self.user_id, session_id)
         session.findings.append(
@@ -408,7 +408,7 @@ class TestAdvancePhaseGate(_AuthOverriddenTestCase):
             )
         )
 
-        response = self.client.post(f"/sessions/{session_id}/advance-phase", json={"target_phase": "MASTER_BUILD"})
+        response = self.client.post(f"/sessions/{session_id}/advance-phase", json={"target_phase": "FOUNDATIONAL_BUILD"})
         self.assertEqual(response.status_code, 200)
 
     def test_unknown_phase_name_is_400(self) -> None:
@@ -672,7 +672,7 @@ class TestChatEndpoint(_AuthOverriddenTestCase):
     def test_user_message_reaches_the_model_with_a_current_date_note(self) -> None:
         """Task #1, 2026-07-27 handoff: the model otherwise has no
         ground truth for today's date anywhere in its request context,
-        which produced a wrong year guess during Master Build. The note
+        which produced a wrong year guess during Foundational Build. The note
         has to be prepended per turn here, not baked into spec_text,
         since spec_text is cached globally (spec 9.1) and a date baked
         into a shared cache would go stale for every user at once."""
@@ -684,11 +684,11 @@ class TestChatEndpoint(_AuthOverriddenTestCase):
             yield {"type": "done", "text": "ok", "messages": kwargs["messages"]}
 
         with patch.object(self.module, "stream_turn", side_effect=_capture_and_finish):
-            self.client.post(f"/sessions/{session_id}/chat", json={"message": "Let's start Master Build."})
+            self.client.post(f"/sessions/{session_id}/chat", json={"message": "Let's start Foundational Build."})
 
         sent_content = captured["messages"][-1]["content"]
         self.assertTrue(sent_content.startswith("[Current date: "))
-        self.assertIn("Let's start Master Build.", sent_content)
+        self.assertIn("Let's start Foundational Build.", sent_content)
 
     def test_current_date_note_is_never_shown_as_the_users_own_text(self) -> None:
         """The note lives only in what's sent to the model; the client
