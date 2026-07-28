@@ -233,7 +233,21 @@ MAX_ATTACHMENT_BYTES_PER_SESSION = 12 * 1024 * 1024  # 12 MB, oldest evicted fir
 MAX_RESPONSE_TOKENS = int(os.environ.get("IRIS_MAX_RESPONSE_TOKENS", "32000"))
 
 # Per-user /chat rate limit: max calls within the rolling window.
-CHAT_RATE_LIMIT_CALLS = 30
+#
+# Raised from 30 on 2026-07-28: confirmed live, a real new-user
+# walkthrough on the from-scratch entry path (role-by-role elicitation,
+# spec Phase 0) hit this mid-session during ordinary use, not abuse, and
+# was stuck for the rest of the rolling hour with no way to continue.
+# The 2026-07-27 review flagged this as plausible (R-3); this is the
+# live confirmation. 30/hour was sized as an abuse ceiling, not against
+# a real full pipeline session, which routinely runs well past it once
+# audit discussion, several rounds of Foundational Build elicitation,
+# fit check, tailoring, and cover letter revisions are all one
+# conversation. 100 stays a real ceiling, a genuinely runaway loop still
+# hits it fast, while giving a normal thorough session comfortable
+# headroom. Env-overridable so it can be tuned without a redeploy next
+# time.
+CHAT_RATE_LIMIT_CALLS = int(os.environ.get("IRIS_CHAT_RATE_LIMIT_CALLS", "100"))
 CHAT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 
 # How long the /chat SSE stream can go with no new event before it
