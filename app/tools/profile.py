@@ -20,11 +20,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from typing import Any, Dict, List
 
 from app.enforcement import EnforcementKind, ToolResult, tool
-from app.session import CriticalNotDismissibleError, Finding, Session
+from app.session import CriticalNotDismissibleError, Fact, Finding, Session
 from app.tools.audit import compute_content_signature
 
 PROFILE_VERSION = 1
@@ -152,7 +152,12 @@ def check_profile_integrity(profile_markdown: str) -> ToolResult:
         "supported and the payload has the expected top-level shape. "
         "Call check_profile_integrity first; this tool assumes a "
         "structurally intact file and validates its meaning, not its "
-        "transport."
+        "transport. "
+        "This VALIDATES ONLY and changes no session state. To actually "
+        "restore the session, follow it with restore_registry_from_profile "
+        "(T-2.19) for the facts and apply_dismissed_findings (T-2.18) for "
+        "the dismissals; without those the session stays empty and T-5.2 "
+        "blocks Fit Check."
     ),
     kind=EnforcementKind.TOOL,
     input_schema={
@@ -193,6 +198,115 @@ def import_iris_profile(json_body: str) -> ToolResult:
             findings=[{"severity": "Critical", "issue": f"Profile payload missing key(s): {', '.join(missing_keys)}.", "fix": "Re-export a fresh profile."}],
         )
     return ToolResult(passed=True, data={"payload": payload})
+
+
+_FACT_REQUIRED_FIELDS = ("id", "type", "value", "statement")
+_FACT_FIELDS = {f.name for f in fields(Fact)}
+
+
+@tool(
+    id="T-2.19",
+    name="restore_registry_from_profile",
+    description=(
+        "Writes a validated profile's Locked Facts Registry back onto "
+        "the session. Call this after import_iris_profile (T-2.15), "
+        "passing the payload's 'registry' list. Without it a returning "
+        "user restores nothing usable: the registry stays empty, and "
+        "T-5.2 blocks Fit Check and Tailoring. "
+        "Refuses to overwrite a session that already has facts, so a "
+        "profile import cannot silently discard work in progress. "
+        "Restoring facts is not the same as verifying them: follow with "
+        "check_facts_traceable_to_master (T-2.17) once the master is "
+        "uploaded, which is what confirms a rehydrated registry still "
+        "matches the document it came from."
+    ),
+    kind=EnforcementKind.TOOL,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "registry": {
+                "type": "array",
+                "description": "The 'registry' list from import_iris_profile's validated payload.",
+                "items": {"type": "object"},
+            },
+            "master_fingerprint": {
+                "type": "string",
+                "description": "The payload's 'master_fingerprint', if present. Restored alongside the facts.",
+            },
+        },
+        "required": ["registry"],
+    },
+    needs_session=True,
+)
+def restore_registry_from_profile(registry: List[dict], session: Session, master_fingerprint: str = "") -> ToolResult:
+    """The missing half of profile import.
+
+    export_iris_profile has always serialized the registry, and
+    import_iris_profile has always validated it and handed it back, but
+    nothing ever wrote it onto the session: the only writer anywhere was
+    registry_tools.lock_fact. So "pick up where I left off" restored
+    dismissed findings and nothing else, and the tool description
+    promising it saved "a full re-audit" was telling the model something
+    untrue (found in the 2026-07-27 production readiness review).
+
+    Facts arrive from a file the user holds, and the profile checksum
+    guards transport rather than tampering, by design (see this module's
+    docstring). That is deliberate, the user owns their own facts, and
+    T-2.17 is the check that a restored registry still traces to a real
+    master."""
+    if session.active_facts():
+        return ToolResult(
+            passed=False,
+            findings=[
+                {
+                    "severity": "High",
+                    "issue": (
+                        f"This session already has {len(session.active_facts())} active fact(s); "
+                        "restoring a profile over them would discard work in progress."
+                    ),
+                    "fix": "Start a new session to restore this profile, or continue without importing.",
+                }
+            ],
+        )
+
+    restored, skipped = 0, []
+    for entry in registry:
+        if not isinstance(entry, dict):
+            skipped.append({"severity": "Medium", "issue": f"Registry entry is {type(entry).__name__}, not an object.", "fix": "Re-export a fresh profile."})
+            continue
+        missing = [f for f in _FACT_REQUIRED_FIELDS if not str(entry.get(f, "")).strip()]
+        if missing:
+            skipped.append(
+                {
+                    "severity": "Medium",
+                    "issue": f"Registry entry '{entry.get('id', '?')}' is missing required field(s): {', '.join(missing)}.",
+                    "fix": "Re-export a fresh profile; this entry was dropped rather than restored partially.",
+                }
+            )
+            continue
+        # Ignore unknown keys rather than passing them to the constructor:
+        # a profile written by a newer harness version should degrade to
+        # the fields this one understands, not raise TypeError and lose
+        # the whole import over one added field.
+        session.registry[entry["id"]] = Fact(**{k: v for k, v in entry.items() if k in _FACT_FIELDS})
+        restored += 1
+
+    # The fingerprint travels in the same payload and is the other half
+    # of "where I left off": without it T-2.19's own check
+    # (check_profile_fingerprint) has nothing to compare a re-uploaded
+    # master against.
+    if master_fingerprint and master_fingerprint.strip():
+        session.master_fingerprint = master_fingerprint.strip()
+
+    return ToolResult(
+        passed=len(skipped) == 0,
+        findings=skipped,
+        data={
+            "restored_count": restored,
+            "skipped_count": len(skipped),
+            "master_fingerprint_restored": bool(master_fingerprint and master_fingerprint.strip()),
+        },
+    )
 
 
 @tool(
