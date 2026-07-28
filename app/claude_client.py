@@ -21,11 +21,19 @@ import json
 import logging
 import os
 import re
+import threading
 from typing import Any, Dict, List, Optional
 
 import anthropic
 
-from app.config import EFFORT, MAX_RESPONSE_TOKENS, MODEL
+from app.config import (
+    EFFORT,
+    MAX_RESPONSE_TOKENS,
+    MODEL,
+    MODEL_CONNECT_TIMEOUT_SECONDS,
+    MODEL_MAX_RETRIES,
+    MODEL_READ_TIMEOUT_SECONDS,
+)
 from app.enforcement import registry
 from app.session import Session
 from app.tools.slop import EM_DASH
@@ -55,14 +63,56 @@ def _sanitize_assistant_text(text: str) -> str:
     return _EM_DASH_RE.sub(", ", text)
 
 
+_client_singleton: Optional[anthropic.Anthropic] = None
+_client_lock = threading.Lock()
+
+
 def _client() -> anthropic.Anthropic:
+    """Process-wide client, built once.
+
+    This used to construct a fresh anthropic.Anthropic on every turn,
+    which threw away the underlying httpx connection pool each time and
+    paid a new TLS handshake per turn for no reason. The SDK client is
+    thread-safe, so one instance serves every concurrent request.
+
+    Retry and timeout behavior is pinned here rather than inherited from
+    the SDK's defaults; see the reasoning in config.py."""
+    global _client_singleton
+    if _client_singleton is not None:
+        return _client_singleton
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set. Set it in the environment or a "
             ".env file before calling run_turn()."
         )
-    return anthropic.Anthropic(api_key=api_key)
+
+    with _client_lock:
+        if _client_singleton is None:
+            _client_singleton = anthropic.Anthropic(
+                api_key=api_key,
+                max_retries=MODEL_MAX_RETRIES,
+                # anthropic.Timeout is the SDK's own re-export of httpx's,
+                # used rather than importing httpx directly: httpx is a
+                # transitive dependency here, not a declared one, and
+                # reaching past the SDK for a type it already exposes is
+                # how an unrelated upgrade turns into an ImportError.
+                timeout=anthropic.Timeout(
+                    MODEL_READ_TIMEOUT_SECONDS,
+                    connect=MODEL_CONNECT_TIMEOUT_SECONDS,
+                ),
+            )
+    return _client_singleton
+
+
+def reset_client_for_testing() -> None:
+    """Test-only escape hatch, mirroring clerk_auth.reset_verifier_for_testing:
+    clears the cached singleton so a test can change configuration and
+    get a client built from it rather than reusing the first one."""
+    global _client_singleton
+    with _client_lock:
+        _client_singleton = None
 
 
 class UpstreamModelError(RuntimeError):

@@ -86,6 +86,32 @@ MODEL = os.environ.get("IRIS_MODEL", "claude-sonnet-4-6")
 # resume work was actually validated against.
 EFFORT = os.environ.get("IRIS_EFFORT", "medium")
 
+# Upstream HTTP behavior, pinned rather than inherited.
+#
+# Correcting the record from the 2026-07-27 review, which claimed there
+# was "no retry on upstream 429 or 5xx": not true. The SDK already
+# retries 408, 409, 429, and 5xx with exponential backoff, twice by
+# default, and already applies a 600s read / 5s connect timeout. Nothing
+# was unprotected. These are set explicitly for the same reason EFFORT
+# is: a default inherited from a dependency is a default that can change
+# under you on an upgrade, silently, and this one governs both cost and
+# how long a stuck request holds a session lock.
+#
+# Retries raised 2 -> 4 because the asymmetry favors it here. A retry
+# costs a second or two of backoff; a failure surfacing to the user
+# mid-Master-Build costs three minutes of work they then repeat.
+MODEL_MAX_RETRIES = int(os.environ.get("IRIS_MODEL_MAX_RETRIES", "4"))
+
+# Read timeout is time BETWEEN chunks, not total request duration, since
+# every call goes through .messages.stream(). A healthy generation
+# delivers tokens continuously, so a long gap means something is wrong
+# rather than something is slow: the observed full-turn times are well
+# under a minute per API call even on the heaviest phases. 600s let a
+# genuinely hung request hold a per-session lock for ten minutes;
+# 180s bounds that while staying far above any real inter-chunk gap.
+MODEL_READ_TIMEOUT_SECONDS = float(os.environ.get("IRIS_MODEL_READ_TIMEOUT", "180"))
+MODEL_CONNECT_TIMEOUT_SECONDS = 10.0
+
 # ---------------------------------------------------------------------------
 # Runtime resource limits (B4/B5, pre-deploy review 2026-07-25).
 #
