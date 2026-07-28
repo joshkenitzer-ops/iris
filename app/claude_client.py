@@ -213,161 +213,69 @@ def run_turn(
     max_tokens: int = MAX_RESPONSE_TOKENS,
     max_tool_iterations: int = 12,
 ) -> Dict[str, Any]:
-    """Run one user turn to completion, dispatching every tool call the
-    model makes until it produces a final text response or the
-    iteration cap is hit.
+    """Run one user turn to completion and return its result.
 
-    `session`, when provided, is threaded through to
-    registry.dispatch() so needs_session tools (fact-lock validation,
-    value-match against the registry) receive real session state. It
-    is never placed in the messages sent to the model; the model has
-    no way to read or forge it.
+    A thin wrapper over stream_turn since 2026-07-27. It was previously
+    a second, independent copy of the same tool loop, deferred
+    deliberately during an incident on the grounds that refactoring the
+    production path mid-crisis was not worth the risk. That was the
+    right call then and the wrong state to stay in: by the time it was
+    consolidated, this copy had missed five separate fixes that only
+    ever landed in stream_turn.
 
-    Returns {"text": str, "messages": list} where `messages` is the
-    full updated transcript, ready to be stored and passed back in on
-    the next call.
-    """
-    client = _client()
-    tools = registry.claude_schemas(tool_ids)
-    working_messages = list(messages)
+      - no message cache breakpoint, so every tool-loop iteration
+        re-sent the whole transcript as fresh uncached input
+      - no TOOL/GATE batch dispatch, so N deterministic checks meant N
+        sequential round trips
+      - no live text streaming
+      - no text_reset, so tool-turn preamble accumulated
+      - no file_ready emission, so a rendered document was unreachable
 
-    for _ in range(max_tool_iterations):
-        # Logged at every round trip because accumulated context is the
-        # most likely cause of a request that worked earlier in a
-        # conversation and fails later: tool results (an ingested
-        # document can be up to MAX_INGEST_TEXT_CHARS on its own) stay
-        # in the transcript and are resent every turn. When a chat
-        # starts failing partway through a session, this is the first
-        # number to look at.
-        approx_chars = sum(len(str(m.get("content", ""))) for m in working_messages)
-        logger.info(
-            "Claude call: %d messages, ~%d chars of transcript, %d tools",
-            len(working_messages),
-            approx_chars,
-            len(tools),
-        )
+    Every one of those was a real production fix. Keeping a duplicate
+    loop meant each had to be applied twice by hand, and five times in a
+    row it was applied once. Consuming the generator instead makes that
+    class of drift impossible rather than merely discouraged.
 
-        try:
-            # A large max_tokens (raised to 32000 on 2026-07-26 to give
-            # Sonnet 5's default adaptive thinking real headroom, see
-            # config.py) pushes the SDK's own worst-case-duration
-            # estimate past its 10-minute non-streaming ceiling, at
-            # which point .create() refuses outright with
-            # "Streaming is required for operations that may take
-            # longer than 10 minutes" rather than attempting the call.
-            # .messages.stream(...).get_final_message() sidesteps that
-            # by having the SDK stream the response internally, while
-            # still handing back the exact same accumulated Message
-            # object .create() used to return - nothing below this
-            # line needs to know the difference.
-            with client.messages.stream(
-                model=MODEL,
-                max_tokens=max_tokens,
-                system=[
-                    {
-                        "type": "text",
-                        "text": spec_text,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                tools=tools,
-                messages=working_messages,
-                output_config={"effort": EFFORT},
-            ) as message_stream:
-                response = message_stream.get_final_message()
-        except anthropic.APIError as exc:
-            status = getattr(exc, "status_code", None)
-            logger.exception("Anthropic API call failed (status=%s)", status)
-            raise UpstreamModelError(status, str(exc)) from exc
+    Returns {"text": str, "messages": list}, unchanged. `session` is
+    still threaded through to registry.dispatch() and still never
+    appears in the messages sent to the model.
 
-        logger.info(
-            "Claude responded: stop_reason=%s, blocks=%s",
-            response.stop_reason,
-            [block.type for block in response.content],
-        )
+    One deliberate behavior note: stream_turn reports failure as a
+    terminal event rather than an exception, because by the time it is
+    driving an SSE response the HTTP status is already committed. This
+    wrapper maps those events back to the exception types callers of
+    run_turn expect, using the `reason` field the events now carry. The
+    upstream status code travels with it; the categorized user-facing
+    message is what the exception carries as its text."""
+    final: Optional[Dict[str, Any]] = None
 
-        working_messages = working_messages + [
-            {"role": "assistant", "content": _blocks_to_plain(response.content)}
-        ]
+    for event in stream_turn(
+        spec_text=spec_text,
+        messages=messages,
+        session=session,
+        tool_ids=tool_ids,
+        max_tokens=max_tokens,
+        max_tool_iterations=max_tool_iterations,
+    ):
+        kind = event.get("type")
+        if kind == "done":
+            final = {"text": event["text"], "messages": event["messages"]}
+        elif kind == "error":
+            reason = event.get("reason")
+            if reason == "tool_loop_exhausted":
+                raise ToolLoopExhausted(max_tool_iterations, list(messages))
+            if reason == "not_configured":
+                raise RuntimeError(event["detail"])
+            raise UpstreamModelError(event.get("status_code"), event["detail"])
 
-        if response.stop_reason != "tool_use":
-            final_text = _sanitize_assistant_text("".join(
-                block.text for block in response.content if block.type == "text"
-            ))
-
-            # A truncated response is not a successful one. Hitting the
-            # output cap mid-answer produces stop_reason="max_tokens",
-            # and if the cut landed before any complete text block this
-            # used to return {"text": ""} with a 200, which the UI
-            # rendered as an empty bubble: the user saw the assistant
-            # reply with nothing and had no way to tell whether it
-            # failed, was still working, or had genuinely said nothing.
-            if response.stop_reason == "max_tokens":
-                logger.warning(
-                    "Response hit the %d-token output cap (%d chars of text recovered)",
-                    max_tokens,
-                    len(final_text),
-                )
-                notice = (
-                    "\n\n[This response was cut off at the output limit. Ask for it in "
-                    "smaller pieces, for example one section or one check at a time.]"
-                )
-                return {"text": (final_text + notice) if final_text else notice.strip(), "messages": working_messages}
-
-            if not final_text.strip():
-                # Any other empty completion is a real anomaly worth
-                # surfacing rather than rendering as silence.
-                logger.error(
-                    "Empty completion with stop_reason=%s and blocks=%s",
-                    response.stop_reason,
-                    [block.type for block in response.content],
-                )
-                return {
-                    "text": (
-                        "The assistant returned an empty response. Try rephrasing, or "
-                        "start a new session if this keeps happening."
-                    ),
-                    "messages": working_messages,
-                }
-
-            return {"text": final_text, "messages": working_messages}
-
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-            try:
-                result = registry.dispatch(block.name, block.input, session=session)
-                content = {
-                    "passed": result.passed,
-                    "findings": result.findings,
-                    "data": result.data,
-                }
-            except Exception:  # noqa: BLE001
-                # Logged in full server-side; the model gets the tool
-                # name and nothing else. Raw exception text used to go
-                # into the transcript and back out to the client, which
-                # contradicted main.py's generic-500 policy and could
-                # carry internal detail (S3, pre-deploy review
-                # 2026-07-25).
-                logger.exception("Tool %s raised during dispatch", block.name)
-                content = {
-                    "error": f"Tool {block.name} failed to run. The harness logged the detail.",
-                }
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    # json.dumps, not str(): str() emits a Python repr with
-                    # single quotes, which is not valid JSON for the model
-                    # to parse (S7).
-                    "content": json.dumps(content, default=str),
-                }
-            )
-
-        working_messages = working_messages + [{"role": "user", "content": tool_results}]
-
-    raise ToolLoopExhausted(max_tool_iterations, working_messages)
+    if final is None:
+        # stream_turn always terminates on "done" or "error", so this is
+        # unreachable by contract. It raises rather than returning a
+        # plausible-looking empty result, because a silent {"text": ""}
+        # is exactly the shape of failure that took a production
+        # debugging session to find once already.
+        raise ToolLoopExhausted(max_tool_iterations, list(messages))
+    return final
 
 
 def _humanize_tool_name(name: str) -> str:
@@ -426,15 +334,15 @@ def stream_turn(
     happening while a multi-tool-call turn is still in flight rather
     than a static "thinking" indicator with no information behind it.
 
-    Deliberately a separate function rather than a refactor of
-    run_turn: run_turn is exercised directly by
-    tests/test_claude_client_smoke.py, the one test in this codebase
-    that costs real money and needs a live network, and changing it
-    late in a session that has already caused two production outages
-    tonight is not a risk worth taking for what is fundamentally a
-    duplicate loop. The two will drift if either changes without the
-    other; consolidating them behind a shared core is worth doing
-    later, deliberately, not as a rider on this change.
+    This is the single implementation of the tool loop. run_turn was a
+    second copy of it until 2026-07-27, kept deliberately separate
+    during an incident on the grounds that refactoring the production
+    path mid-crisis was not worth the risk. The prediction attached to
+    that decision, "the two will drift if either changes without the
+    other," held: by the time they were consolidated the other copy had
+    missed five separate fixes. run_turn is now a thin wrapper that
+    drains this generator, so a fix landing here cannot fail to reach
+    it.
 
     Yields dicts, always with a "type" key:
       {"type": "status", "message": str}
@@ -472,7 +380,7 @@ def stream_turn(
     try:
         client = _client()
     except RuntimeError as exc:
-        yield {"type": "error", "detail": str(exc)}
+        yield {"type": "error", "detail": str(exc), "reason": "not_configured"}
         return
 
     tools = registry.claude_schemas(tool_ids)
@@ -560,7 +468,7 @@ def stream_turn(
         except anthropic.APIError as exc:
             status = getattr(exc, "status_code", None)
             logger.exception("Anthropic API call failed (status=%s)", status)
-            yield {"type": "error", "detail": _upstream_error_detail(status)}
+            yield {"type": "error", "detail": _upstream_error_detail(status), "reason": "upstream", "status_code": status}
             return
 
         logger.info(
@@ -750,6 +658,7 @@ def stream_turn(
     yield {
         "type": "error",
         "detail": "The assistant could not complete this turn. Rephrase and try again.",
+        "reason": "tool_loop_exhausted",
     }
 
 

@@ -133,3 +133,82 @@ class TestStreamTurnTextReset(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRunTurnWrapsStreamTurn(unittest.TestCase):
+    """run_turn had no CI coverage at all: its only test is the paid
+    smoke test, which skips without ANTHROPIC_API_KEY. That is precisely
+    how it drifted five fixes behind stream_turn before being
+    consolidated (2026-07-27). Same fake client, so this runs offline."""
+
+    def setUp(self) -> None:
+        self.session = Session(session_id="s", user_id="u")
+
+    def _run(self, turns, **kwargs):
+        from app.claude_client import run_turn
+
+        with patch.object(claude_client_module, "_client", return_value=_fake_client_with_turns(turns)):
+            return run_turn(
+                spec_text="spec",
+                messages=[{"role": "user", "content": "hi"}],
+                session=self.session,
+                **kwargs,
+            )
+
+    def test_returns_the_final_text_and_transcript(self) -> None:
+        result = self._run([{
+            "text_chunks": ["All done."],
+            "content_blocks": [SimpleNamespace(type="text", text="All done.")],
+            "stop_reason": "end_turn",
+        }])
+        self.assertEqual(result["text"], "All done.")
+        self.assertEqual(result["messages"][-1]["role"], "assistant")
+
+    def test_drives_the_tool_loop_to_completion(self) -> None:
+        turns = [
+            {
+                "text_chunks": [],
+                "content_blocks": [
+                    SimpleNamespace(type="tool_use", id="t1", name="check_em_dash", input={"text": "clean"}),
+                ],
+                "stop_reason": "tool_use",
+            },
+            {
+                "text_chunks": ["Checked."],
+                "content_blocks": [SimpleNamespace(type="text", text="Checked.")],
+                "stop_reason": "end_turn",
+            },
+        ]
+        self.assertEqual(self._run(turns)["text"], "Checked.")
+
+    def test_inherits_the_em_dash_sanitizer(self) -> None:
+        """A fix that had to be applied to both copies by hand. Now it
+        cannot be applied to only one."""
+        result = self._run([{
+            "text_chunks": ["Two findings — both minor."],
+            "content_blocks": [SimpleNamespace(type="text", text="Two findings — both minor.")],
+            "stop_reason": "end_turn",
+        }])
+        self.assertNotIn("—", result["text"])
+
+    def test_exhausted_tool_loop_raises_rather_than_returning_empty(self) -> None:
+        from app.claude_client import ToolLoopExhausted
+
+        looping = [{
+            "text_chunks": [],
+            "content_blocks": [SimpleNamespace(type="tool_use", id="t", name="check_em_dash", input={"text": "x"})],
+            "stop_reason": "tool_use",
+        }] * 6
+        with self.assertRaises(ToolLoopExhausted):
+            self._run(looping, max_tool_iterations=3)
+
+    def test_upstream_failure_raises_upstream_model_error(self) -> None:
+        import anthropic
+
+        from app.claude_client import UpstreamModelError, run_turn
+
+        fake = MagicMock()
+        fake.messages.stream.side_effect = anthropic.APIError("boom", request=MagicMock(), body=None)
+        with patch.object(claude_client_module, "_client", return_value=fake):
+            with self.assertRaises(UpstreamModelError):
+                run_turn(spec_text="spec", messages=[{"role": "user", "content": "hi"}], session=self.session)
