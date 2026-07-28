@@ -217,6 +217,30 @@ def _save_to_bytes(doc: Document) -> bytes:
 import base64
 
 from app.enforcement import EnforcementKind, ToolResult, tool
+from app.gates import GateBlocked, require_gap_not_silently_removed, require_no_open_criticals
+from app.tools.formatting import _MASTER_RE
+
+
+def _is_deliverable(filename: str) -> bool:
+    """Whether rendering this filename constitutes DELIVERY, the moment
+    spec rule 4.4 puts the Phase 8 gates at.
+
+    The master is deliberately excluded. Spec Phase 2 is explicit on
+    both halves of why: "the master is the source document, not a
+    document to send," and Iris "immediately renders the docx" on
+    Master Build completion, which happens long before Final Review.
+    Gating every render would therefore break Phase 2 outright for a
+    real and common case: a Phase 1 Critical that the user acknowledged
+    with a stated reason satisfies require_phase1_disposition but is
+    still counted by open_criticals(), since dispositioned is not
+    dismissed. Those users would have been unable to render a master at
+    all.
+
+    Anything not recognizable as a master is treated as a deliverable,
+    so an unrecognized filename fails closed rather than slipping past
+    the gate. check_filename_pattern (T-4.13) is what should have
+    rejected it before reaching here."""
+    return not _MASTER_RE.match(filename.strip())
 
 
 @tool(
@@ -262,6 +286,46 @@ from app.enforcement import EnforcementKind, ToolResult, tool
 )
 def render_resume_docx_tool(sections: list, filename: str, session: Session, font_name: str = DEFAULT_FONT) -> ToolResult:
     pairs = [(s["heading"], s["body"]) for s in sections]
+
+    # The delivery gates, enforced where delivery actually happens.
+    #
+    # T-8.18 and T-7.8 previously ran only in POST /sessions/{id}/deliver,
+    # which nothing in the product ever called: static/app.js has no
+    # reference to it, so every session sat in STARTING_POINT and both
+    # gates were unreachable in production despite passing their tests
+    # (the tests POST the route directly). Meanwhile this function
+    # stored a file and the harness emitted file_ready, which the browser
+    # turned into a download button, so a user could download a resume
+    # with open Critical findings. Spec Principle 9, "programmatic
+    # verification," was decorative at runtime as a result.
+    #
+    # Returning passed=False rather than raising is deliberate: a raise
+    # is swallowed by the dispatch layer into a generic "tool failed to
+    # run" that tells the model nothing actionable. The real enforcement
+    # is that no file is stored, so no file_id comes back, so no
+    # download button appears; the findings just make the reason
+    # legible to the model and therefore to the user.
+    if _is_deliverable(filename):
+        final_text = "\n".join(f"{heading}\n{body}" for heading, body in pairs)
+        try:
+            require_no_open_criticals(session)
+            require_gap_not_silently_removed(session, final_text)
+        except GateBlocked as exc:
+            return ToolResult(
+                passed=False,
+                findings=[
+                    {
+                        "severity": "Critical",
+                        "issue": f"[{exc.gate_id}] {exc.message}",
+                        "fix": (
+                            "Resolve the finding, then render again. This document was not "
+                            "produced and there is nothing for the user to download yet."
+                        ),
+                    }
+                ],
+                data={"blocked_by_gate": exc.gate_id},
+            )
+
     docx_bytes = generate_resume_docx(pairs, font_name=font_name)
     b64 = base64.b64encode(docx_bytes).decode("ascii")
     rendered = session.add_rendered_file(

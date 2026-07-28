@@ -517,6 +517,16 @@ Prior to Iris, the same rebuild process existed as a manual guide and a companio
 
 **Two things from the same material deliberately left out.** An ampersand ban ("spell out 'and'") existed in the prior material, originating from Unicode rendering artifacts in an old docx/PDF export pipeline; not carried forward, since that failure mode has not been observed in the current renderer and there is no evidence it still applies. En dashes in date ranges also existed in the prior material; the current hyphen-based date format (check_date_format, T-4.5) is being kept as the simpler, ASCII-safe standard, a deliberate decision, not an oversight.
 
+## 2026-07-27 (production readiness review): delivery gates enforced where delivery happens
+
+A principal-engineering review of the whole harness found the gate architecture correct and unreachable. T-8.18 (no open Criticals at delivery) and T-7.8 (a Fit Check gap may not silently vanish) ran only inside `POST /sessions/{id}/deliver`, and nothing in the product calls that route: `static/app.js` contains no reference to it, so every session sat in `STARTING_POINT` for its whole life. Both gates passed their tests, because those tests POST the route directly. Meanwhile `render_resume_docx` stored a file and the harness emitted `file_ready`, which the browser turned into a download button. A user could download a resume Iris had already determined was broken, and Design Principle 9, "programmatic verification," was decorative at runtime.
+
+**Gates now run in `render_resume_docx`, the point where a deliverable actually comes into existence.** Rule 4.4 puts these gates at delivery; in this architecture rendering *is* delivery, since the rendered file is what reaches the user. A blocked render returns findings and stores no file, so no `file_id` exists, no `file_ready` event fires, and no download button appears. The enforcement is the absent artifact, not the message: a finding alone is something a model can talk past.
+
+**The master is deliberately exempt**, per Phase 2 above: it is "the source document, not a document to send," and Iris renders it immediately on Master Build completion, long before Final Review. Gating every render would also have broken a common real case, since a Phase 1 Critical acknowledged with a stated reason satisfies `require_phase1_disposition` but is still counted by `open_criticals()` (dispositioned is not dismissed). Those users would have been locked out of Master Build entirely. Artifact type is determined from the filename patterns T-4.13 already defines; anything not recognizable as a master is treated as a deliverable, so an unrecognized name fails closed.
+
+**Testing standard this changes.** 554 passing tests did not catch this, because each unit was correct and nothing asserted the units were connected. Tests for enforcement now go through `registry.dispatch`, the same path a model tool call takes, rather than calling gate functions directly. A test that calls the gate directly is exactly the kind that passed while the product shipped ungated.
+
 ## Open items
 
 - **Two of six service names.** v0.9 names `buildService`, `tailorService`, and `docxService`; the handoff adds `reviewService`. Two remain unnamed, as does the mapping of nine phases onto six services.
