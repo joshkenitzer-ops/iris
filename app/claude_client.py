@@ -648,13 +648,16 @@ def stream_turn(
                     if has_file:
                         file_id = result.data["file_id"]
                         filename = result.data.get("filename", "download")
-                        rendered = session.get_rendered_file(file_id) if session else None
+                        # No bytes on the wire: the file is already stored
+                        # server-side and the browser fetches it from
+                        # /sessions/{id}/files/{file_id} with its auth
+                        # header. Inlining data_base64 here sent every
+                        # rendered document across the stream a second
+                        # time for no benefit (2026-07-27 review, C-3).
                         yield {
                             "type": "file_ready",
                             "file_id": file_id,
                             "filename": filename,
-                            "content_type": rendered.content_type if rendered else "application/octet-stream",
-                            "data_base64": rendered.data_base64 if rendered else "",
                         }
                 except Exception:  # noqa: BLE001
                     logger.exception("Tool %s raised during batch dispatch", block.name)
@@ -677,13 +680,10 @@ def stream_turn(
                 if result.passed and result.data and result.data.get("file_id"):
                     file_id = result.data["file_id"]
                     filename = result.data.get("filename", "download")
-                    rendered = session.get_rendered_file(file_id) if session else None
                     yield {
                         "type": "file_ready",
                         "file_id": file_id,
                         "filename": filename,
-                        "content_type": rendered.content_type if rendered else "application/octet-stream",
-                        "data_base64": rendered.data_base64 if rendered else "",
                     }
             except Exception:  # noqa: BLE001
                 logger.exception("Tool %s raised during dispatch", block.name)

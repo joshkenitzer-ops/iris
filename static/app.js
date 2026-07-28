@@ -478,7 +478,7 @@ async function consumeChatStream(response) {
         streamingEl = null;
         streamingBuffer = "";
       } else if (event.type === "file_ready") {
-        appendDownloadButton(event.filename, event.content_type, event.data_base64);
+        appendDownloadButton(event.file_id, event.filename);
       } else if (event.type === "done") {
         sawTerminalEvent = true;
         hideStatus();
@@ -600,7 +600,19 @@ function appendStreamingMessage() {
   return el;
 }
 
-function appendDownloadButton(filename, contentType, dataBase64) {
+function appendDownloadButton(fileId, filename) {
+  /* Fetches the file through apiFetch when clicked, rather than pointing
+     an <a href> at the download route.
+
+     The route requires an Authorization header (Depends
+     get_current_user_id), and a plain <a href> navigation cannot set
+     headers, so it would always have 401'd. The old fallback also
+     passed `filename` where the route expects `file_id`, so it would
+     have 404'd first: broken twice over, and masked only because the
+     bytes were being inlined as a data: URL instead. Inlining them
+     meant every rendered document crossed the SSE stream a second time
+     on top of already being stored server-side (2026-07-27 review,
+     B-1 and C-3). */
   const list = document.getElementById("message-list");
   const card = document.createElement("div");
   card.className = "download-card";
@@ -613,16 +625,39 @@ function appendDownloadButton(filename, contentType, dataBase64) {
   label.className = "download-filename";
   label.textContent = filename;
 
-  const btn = document.createElement("a");
+  const btn = document.createElement("button");
   btn.className = "lore-btn-primary download-btn";
   btn.textContent = "Download";
-  btn.download = filename;
+  btn.type = "button";
 
-  if (dataBase64) {
-    btn.href = "data:" + contentType + ";base64," + dataBase64;
-  } else {
-    btn.href = "/sessions/" + currentSessionId + "/files/" + filename;
-  }
+  btn.addEventListener("click", async function () {
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Preparing...";
+    try {
+      const response = await apiFetch(
+        "/sessions/" + currentSessionId + "/files/" + encodeURIComponent(fileId)
+      );
+      if (!response.ok) throw new Error("download failed: " + response.status);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      // Revoked on the next tick rather than immediately: Safari cancels
+      // an in-flight download if the object URL is released too soon.
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      btn.textContent = original;
+    } catch (err) {
+      btn.textContent = "Try again";
+      appendMessage("error", "Could not download " + filename + ". Check your connection and try again.");
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   card.appendChild(icon);
   card.appendChild(label);

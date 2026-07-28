@@ -47,6 +47,7 @@ need isolation from each other create sessions under a fresh random
 user_id rather than relying on the store being empty.
 """
 
+import base64
 import importlib
 import json
 import os
@@ -554,6 +555,55 @@ def _fake_stream_turn(events):
         return iter(events)
 
     return _fake
+
+
+class TestRenderedFileDownload(_AuthOverriddenTestCase):
+    """The download route had no coverage at all, which is how it stayed
+    broken twice over: it requires an Authorization header that a plain
+    <a href> cannot send, and the frontend fallback passed `filename`
+    where the route expects `file_id`. Both were masked because the
+    bytes were being inlined as a data: URL instead (2026-07-27 review,
+    B-1). The frontend now fetches through apiFetch, which is what these
+    assert against."""
+
+    def _session_with_file(self):
+        session_id = self._create_session()
+        session = self.module.store.get(self.user_id, session_id)
+        rendered = session.add_rendered_file(
+            filename="Kenitzer_Joshua_Resume_Acme_SrIDDev_V1.docx",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            data_base64=base64.b64encode(b"PK\x03\x04 fake docx bytes").decode("ascii"),
+        )
+        return session_id, rendered
+
+    def test_authenticated_fetch_by_file_id_returns_the_bytes(self) -> None:
+        session_id, rendered = self._session_with_file()
+        response = self.client.get(f"/sessions/{session_id}/files/{rendered.id}")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.content, b"PK\x03\x04 fake docx bytes")
+
+    def test_response_tells_the_browser_to_save_under_the_real_filename(self) -> None:
+        session_id, rendered = self._session_with_file()
+        response = self.client.get(f"/sessions/{session_id}/files/{rendered.id}")
+        self.assertIn(rendered.filename, response.headers["content-disposition"])
+
+    def test_fetching_by_filename_instead_of_file_id_is_a_404(self) -> None:
+        """Pins the exact old frontend bug: the route is keyed by
+        file_id, and passing the filename never worked."""
+        session_id, rendered = self._session_with_file()
+        response = self.client.get(f"/sessions/{session_id}/files/{rendered.filename}")
+        self.assertEqual(response.status_code, 404)
+
+    def test_unknown_file_id_is_a_404(self) -> None:
+        session_id = self._create_session()
+        response = self.client.get(f"/sessions/{session_id}/files/not-a-real-file-id")
+        self.assertEqual(response.status_code, 404)
+
+    def test_another_users_file_is_not_reachable(self) -> None:
+        session_id, rendered = self._session_with_file()
+        self.module.app.dependency_overrides[self.module.get_current_user_id] = lambda: "user_someone_else"
+        response = self.client.get(f"/sessions/{session_id}/files/{rendered.id}")
+        self.assertEqual(response.status_code, 404)
 
 
 class TestChatEndpoint(_AuthOverriddenTestCase):
