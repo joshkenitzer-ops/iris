@@ -30,7 +30,7 @@ That makes the spec the source of truth rather than documentation. It is version
 | `app/tools/` | The deterministic checks themselves, one module per pipeline area. |
 | `static/` | Single-page frontend, served same-origin. |
 | `app/usage.py` | Per-turn token and cost accounting. Attribution reads the tool list, not `Phase`. |
-| `tests/` | 54 files. Includes reachability tests, see Testing below. |
+| `tests/` | 56 files. Includes the reachability guard, see Testing below. |
 
 Read the spec first. Read the tool list when you need to know how a rule is enforced.
 
@@ -81,6 +81,19 @@ python -m pytest -q
 One test costs money and needs a network (`test_claude_client_smoke.py`); it skips automatically unless `ANTHROPIC_API_KEY` is set.
 
 **Enforcement is tested through `registry.dispatch`, the path a real model tool call takes, not by calling gate functions directly.** This is a standard rather than a style preference. A production readiness review on 2026-07-27 found the delivery gates correct, fully unit-tested, and *never called by anything*: the tests invoked the route directly, so they proved the function worked while the product shipped ungated. Tests for enforcement now assert reachability, because a test that calls the gate directly is exactly the kind that passed while the gate was dead.
+
+### The reachability guard
+
+`tests/test_reachability_guard.py` fails the build when a check has no caller. It exists because that standard was followed by hand and still missed five separate cases: the delivery gates, the download route, the page-length checks, the unresolved-marker gate, and `bootstrapSession()` in `app.js`. Every one was correct code, unit-tested, and unreachable, and every one was found by a person noticing after it shipped.
+
+Three rules: every `require_*` gate must be called from `app/`; every route in `main.py` must be called from `static/app.js`; every function declared in `app.js` must be referenced.
+
+Two details are load-bearing and should not be "simplified" away:
+
+- **A call site inside a dead-route handler does not count as reachability.** The first version of the guard passed with the delivery gates removed from the render path, because they are still called from `/deliver`, and `/deliver` is a route the product never invokes. It had a blind spot at the exact incident that motivated it.
+- **AST for Python, comment-stripping for JavaScript.** `require_turn_completion` is named in a comment in `gates.py` and called by nothing; `bootstrapSession` appeared exactly twice, its declaration and a comment describing behavior it never delivered. A text search scores both reachable.
+
+Exemptions are allowed and must carry a written reason. They are themselves guarded: an exemption for something since wired fails, and an exemption naming something that no longer exists fails. An allowlist that rots silently is a permanent blind spot rather than a record of a decision.
 
 ## Running locally
 
