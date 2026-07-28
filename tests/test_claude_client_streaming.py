@@ -7,14 +7,30 @@ from app.claude_client import stream_turn
 from app.session import Session
 
 
+def fake_usage(input_tokens=100, cache_w=0, cache_r=0, output_tokens=50):
+    """The four counters the SDK returns on every Message. Shaped like
+    the real thing (all four present) so tests exercise the same
+    accounting path production does rather than the None fallback."""
+    return SimpleNamespace(
+        input_tokens=input_tokens,
+        cache_creation_input_tokens=cache_w,
+        cache_read_input_tokens=cache_r,
+        output_tokens=output_tokens,
+    )
+
+
 class _FakeMessageStream:
     """Stands in for the SDK's `client.messages.stream(...)` context
     manager: a fixed list of text chunks plus the final accumulated
-    Message (content blocks + stop_reason)."""
+    Message (content blocks + stop_reason + usage)."""
 
-    def __init__(self, text_chunks, content_blocks, stop_reason):
+    def __init__(self, text_chunks, content_blocks, stop_reason, usage=None):
         self._text_chunks = text_chunks
-        self._final = SimpleNamespace(content=content_blocks, stop_reason=stop_reason)
+        self._final = SimpleNamespace(
+            content=content_blocks,
+            stop_reason=stop_reason,
+            usage=usage if usage is not None else fake_usage(),
+        )
 
     def __enter__(self):
         return self
@@ -39,7 +55,12 @@ def _fake_client_with_turns(turns):
     def _stream(**kwargs):
         turn = turns[calls["n"]]
         calls["n"] += 1
-        return _FakeMessageStream(turn["text_chunks"], turn["content_blocks"], turn["stop_reason"])
+        return _FakeMessageStream(
+            turn["text_chunks"],
+            turn["content_blocks"],
+            turn["stop_reason"],
+            turn.get("usage"),
+        )
 
     fake = MagicMock()
     fake.messages.stream.side_effect = _stream

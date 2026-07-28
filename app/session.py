@@ -39,6 +39,7 @@ from app.config import (
     MAX_TRANSCRIPT_MESSAGES,
     SESSION_TTL_SECONDS,
 )
+from app.usage import SessionUsage
 
 
 def _carries_tool_result(message: Dict) -> bool:
@@ -218,6 +219,7 @@ class Session:
     last_accessed: float = field(default_factory=time.monotonic)  # B5: drives idle eviction
     attachments: Dict[str, Attachment] = field(default_factory=dict)  # T-0.1: uploaded files, keyed by attachment id
     rendered_files: Dict[str, RenderedFile] = field(default_factory=dict)  # output files ready for browser download
+    usage: SessionUsage = field(default_factory=SessionUsage)  # running token/cost totals; see app/usage.py
 
     def add_rendered_file(self, filename: str, content_type: str, data_base64: str) -> RenderedFile:
         rendered = RenderedFile(

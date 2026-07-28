@@ -113,6 +113,32 @@ MODEL_READ_TIMEOUT_SECONDS = float(os.environ.get("IRIS_MODEL_READ_TIMEOUT", "18
 MODEL_CONNECT_TIMEOUT_SECONDS = 10.0
 
 # ---------------------------------------------------------------------------
+# Token pricing, USD per million tokens (app/usage.py).
+#
+# These exist so per-turn cost can be logged alongside per-turn tokens
+# without hardcoding a price in the logger. They are the published
+# first-party rates for MODEL above (Sonnet 4.6: $3.00 in / $15.00 out
+# per MTok). They are NOT authoritative: Anthropic owns the price, this
+# is a local copy of it, and a model swap or a price change makes these
+# wrong silently. Treat a cost figure in the logs as an estimate for
+# comparing interaction types against each other, and the Console for
+# what was actually billed.
+#
+# The two multipliers are the reason this module exists at all. Iris
+# pins the spec and every tool schema with cache_control on every single
+# call, so the large majority of input tokens on a typical turn are
+# cache reads at a tenth of the input rate. Billing the four token
+# classes at one flat rate would overstate real input cost by roughly an
+# order of magnitude on the cached portion, which is precisely the
+# number a pricing decision would be built on.
+PRICE_INPUT_PER_MTOK = float(os.environ.get("IRIS_PRICE_INPUT_PER_MTOK", "3.00"))
+PRICE_OUTPUT_PER_MTOK = float(os.environ.get("IRIS_PRICE_OUTPUT_PER_MTOK", "15.00"))
+# Cache writes cost 1.25x the input rate at the default 5-minute TTL
+# (2x at 1h, which Iris does not use); cache reads cost 0.1x.
+CACHE_WRITE_MULTIPLIER = float(os.environ.get("IRIS_CACHE_WRITE_MULTIPLIER", "1.25"))
+CACHE_READ_MULTIPLIER = float(os.environ.get("IRIS_CACHE_READ_MULTIPLIER", "0.10"))
+
+# ---------------------------------------------------------------------------
 # Runtime resource limits (B4/B5, pre-deploy review 2026-07-25).
 #
 # These are not style thresholds like the ones above; they exist because

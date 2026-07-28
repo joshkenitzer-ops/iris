@@ -14,7 +14,7 @@ Formerly Hermes. Renamed 2026-07-21 after a naming collision with commercial "He
 
 Nine-phase pipeline working end to end: upload or start from scratch, adversarial audit, foundational resume build, fit check against a job description, tailoring, paired cover letter, three-tier final review, docx delivery. Observed timings on a full-size real resume: audit ~1 minute, foundational build ~3 minutes, fit check under a minute.
 
-597 tests passing. Not yet public, and not yet on production Clerk keys.
+624 tests passing. Not yet public, and not yet on production Clerk keys.
 
 ## What this repository holds
 
@@ -29,7 +29,8 @@ That makes the spec the source of truth rather than documentation. It is version
 | `app/` | The harness. FastAPI routes, the tool registry, gates, session state. |
 | `app/tools/` | The deterministic checks themselves, one module per pipeline area. |
 | `static/` | Single-page frontend, served same-origin. |
-| `tests/` | 53 files. Includes reachability tests, see Testing below. |
+| `app/usage.py` | Per-turn token and cost accounting. Attribution reads the tool list, not `Phase`. |
+| `tests/` | 54 files. Includes reachability tests, see Testing below. |
 
 Read the spec first. Read the tool list when you need to know how a rule is enforced.
 

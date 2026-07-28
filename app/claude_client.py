@@ -37,6 +37,7 @@ from app.config import (
 from app.enforcement import registry
 from app.session import Session
 from app.tools.slop import EM_DASH
+from app.usage import TurnUsage
 
 logger = logging.getLogger("iris.claude")
 
@@ -328,6 +329,78 @@ def stream_turn(
     max_tokens: int = MAX_RESPONSE_TOKENS,
     max_tool_iterations: int = 12,
 ):
+    """Public entry point. Delegates to _stream_turn_events and
+    guarantees the turn's token usage is recorded exactly once, however
+    the turn ends.
+
+    The measurement lives in this wrapper rather than inline because
+    _stream_turn_events has seven exit paths: a normal completion, a
+    max_tokens truncation, an empty completion, an unconfigured client,
+    an upstream API error, tool-loop exhaustion, and the caller simply
+    walking away mid-stream. Logging at each one means a new exit path
+    added later silently stops being measured, and "correct logic
+    nothing ever called" is the single most expensive defect class this
+    codebase has produced. A finally block cannot be forgotten: it runs
+    on return, on exception, and on generator close when a client
+    disconnects, so a turn that spent money and then failed is still
+    counted as money spent."""
+    turn = TurnUsage()
+    try:
+        yield from _stream_turn_events(
+            spec_text=spec_text,
+            messages=messages,
+            session=session,
+            tool_ids=tool_ids,
+            max_tokens=max_tokens,
+            max_tool_iterations=max_tool_iterations,
+            turn=turn,
+        )
+    finally:
+        _record_turn_usage(turn, session)
+
+
+def _record_turn_usage(turn: TurnUsage, session: Optional[Session]) -> None:
+    """Emit the per-turn usage line and fold the turn into the session.
+
+    Wrapped in its own try/except because it runs from a finally block.
+    An exception raised here would replace whatever was actually
+    happening to the turn, including a genuine upstream error on its way
+    to the user, with a traceback from the accounting code. Measurement
+    is never worth losing the thing being measured."""
+    try:
+        if turn.api_calls == 0:
+            return
+        fields = turn.as_log_fields()
+        logger.info(
+            "IRIS_USAGE session=%s label=%s calls=%d in=%d cache_w=%d cache_r=%d "
+            "out=%d total=%d cost_usd=%.4f phases=%s tools=%s",
+            session.session_id if session else "-",
+            fields["label"],
+            fields["calls"],
+            fields["in"],
+            fields["cache_w"],
+            fields["cache_r"],
+            fields["out"],
+            fields["total"],
+            fields["cost_usd"],
+            turn.phase_counts() or "-",
+            ",".join(turn.tool_names) or "-",
+        )
+        if session is not None:
+            session.usage.record_turn(turn)
+    except Exception:  # noqa: BLE001
+        logger.exception("Usage accounting failed; the turn itself was unaffected")
+
+
+def _stream_turn_events(
+    spec_text: str,
+    messages: List[Dict[str, Any]],
+    session: Optional[Session] = None,
+    tool_ids: Optional[List[str]] = None,
+    max_tokens: int = MAX_RESPONSE_TOKENS,
+    max_tool_iterations: int = 12,
+    turn: Optional[TurnUsage] = None,
+):
     """Same job as run_turn, structured as a generator that yields
     progress events instead of returning once at the end, so a caller
     (main.py's /chat route, via SSE) can show the user what's
@@ -386,6 +459,10 @@ def stream_turn(
     tools = registry.claude_schemas(tool_ids)
     working_messages = list(messages)
     iteration = 0
+    # Defaulted rather than required so this generator stays directly
+    # callable in tests without every caller having to build one.
+    if turn is None:
+        turn = TurnUsage()
 
     for _ in range(max_tool_iterations):
         approx_chars = sum(len(str(m.get("content", ""))) for m in working_messages)
@@ -470,6 +547,13 @@ def stream_turn(
             logger.exception("Anthropic API call failed (status=%s)", status)
             yield {"type": "error", "detail": _upstream_error_detail(status), "reason": "upstream", "status_code": status}
             return
+
+        # Recorded before any branch below can return. response.usage is
+        # the API's own count of what this call cost, which is the whole
+        # point: the "~N chars of transcript" line above is an estimate
+        # of one side of one input class, and was the only cost signal
+        # this harness had until now.
+        turn.record_call(getattr(response, "usage", None))
 
         logger.info(
             "Claude responded (streaming): stop_reason=%s, blocks=%s",
@@ -558,8 +642,17 @@ def stream_turn(
         for block in tool_blocks:
             try:
                 spec = registry.get_by_name(block.name)
+                # The spec id ("T-3.1") is what attributes this turn to a
+                # pipeline phase; see app/usage.py for why that beats
+                # session.phase, which never advances past
+                # STARTING_POINT.
+                turn.record_tool(block.name, spec.id)
                 (deterministic_blocks if spec.kind in (EK.TOOL, EK.GATE) else judgment_blocks).append(block)
             except Exception:
+                # An unresolvable name still counts as a tool call: it
+                # tells us the turn was doing tool work even though the
+                # phase cannot be derived from it.
+                turn.record_tool(block.name, None)
                 judgment_blocks.append(block)
 
         # Batch dispatch: all TOOL/GATE in one pass, one status update
