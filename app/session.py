@@ -217,6 +217,15 @@ class Session:
     messages: List[Dict] = field(default_factory=list)  # B1: server-owned transcript, never client-supplied
     created_at: float = field(default_factory=time.monotonic)
     last_accessed: float = field(default_factory=time.monotonic)  # B5: drives idle eviction
+    # When the user last actually said something, as opposed to when
+    # the session was last READ. last_accessed above is touched by
+    # SessionStore.get() on every lookup, including the boot-time
+    # existence check, so it always reads as "just now" from a route's
+    # point of view and cannot answer "how old is this conversation".
+    # None until the first turn. Monotonic like last_accessed, which is
+    # fine: both are only ever compared within one process, and a
+    # restart destroys the sessions anyway.
+    last_turn_at: Optional[float] = None
     attachments: Dict[str, Attachment] = field(default_factory=dict)  # T-0.1: uploaded files, keyed by attachment id
     rendered_files: Dict[str, RenderedFile] = field(default_factory=dict)  # output files ready for browser download
     usage: SessionUsage = field(default_factory=SessionUsage)  # running token/cost totals; see app/usage.py
@@ -286,7 +295,13 @@ class Session:
         checks already passed, which is precisely the model
         self-report that spec rule 4.1 refuses to accept as
         enforcement (B1, pre-deploy review 2026-07-25)."""
+        if not new_messages:
+            return
         self.messages.extend(new_messages)
+        # This is the only place a real conversational turn lands, which
+        # makes it the honest point to stamp activity from. See
+        # last_turn_at for why last_accessed cannot serve this.
+        self.last_turn_at = time.monotonic()
         self.trim_transcript()
 
     def trim_transcript(self) -> None:

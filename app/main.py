@@ -409,6 +409,42 @@ def logout(session_id: str, user_id: str = Depends(get_current_user_id)) -> Dict
     return {"status": "logged_out", "session_id": session_id}
 
 
+def _transcript_for_display(session: Session) -> List[Dict[str, str]]:
+    """The conversation as the user saw it, for rebuilding the screen
+    after a reload.
+
+    A projection, not the raw transcript. session.messages is the
+    model's context and carries tool_use and tool_result blocks that
+    were never on screen and would be noise if they were. This keeps
+    plain text only, in order, and drops any message left empty by that
+    filtering (an assistant turn that was nothing but tool calls, or a
+    user turn that only carried tool results back).
+
+    Note what this deliberately does NOT restore: which tools ran, and
+    the pass/fail chips they produced. Those were progress indicators
+    for work that has already finished. Replaying them on load would
+    show a user a checkpoint the session is no longer at."""
+    display: List[Dict[str, str]] = []
+    for message in session.messages:
+        role = message.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = "".join(
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+        else:
+            text = ""
+        if text.strip():
+            display.append({"role": role, "text": text})
+    return display
+
+
 @app.get("/sessions/{session_id}")
 def get_session(session_id: str, user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
     session = _get_session(user_id, session_id)
@@ -417,6 +453,23 @@ def get_session(session_id: str, user_id: str = Depends(get_current_user_id)) ->
         "phase": session.phase.name,
         "active_fact_count": len(session.active_facts()),
         "open_critical_count": len(session.open_criticals()),
+        # Added 2026-07-28. Without these the frontend could confirm a
+        # session was alive but had no way to show anything in it, so a
+        # reload presented an empty screen over a full session.
+        "messages": _transcript_for_display(session),
+        "files": [
+            {"file_id": f.id, "filename": f.filename}
+            for f in session.rendered_files.values()
+        ],
+        # How long since the user actually said something, so a resumed
+        # session can say how old it is. None on a session with no turns
+        # yet. Deliberately NOT derived from last_accessed, which
+        # SessionStore.get() has already reset by the time this runs.
+        "last_active_seconds_ago": (
+            None
+            if session.last_turn_at is None
+            else max(0.0, time.monotonic() - session.last_turn_at)
+        ),
     }
 
 

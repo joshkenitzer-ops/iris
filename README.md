@@ -14,7 +14,7 @@ Formerly Hermes. Renamed 2026-07-21 after a naming collision with commercial "He
 
 Nine-phase pipeline working end to end: upload or start from scratch, adversarial audit, foundational resume build, fit check against a job description, tailoring, paired cover letter, three-tier final review, docx delivery. Observed timings on a full-size real resume: audit ~1 minute, foundational build ~3 minutes, fit check under a minute.
 
-629 tests passing. Not yet public, and not yet on production Clerk keys.
+644 tests passing. Not yet public, and not yet on production Clerk keys.
 
 ## What this repository holds
 

@@ -277,6 +277,46 @@ body {
   max-width: 90%;
 }
 
+/* Shown once at the top of a resumed session (see resumeSessionIfAny
+   in app.js). Carries its own "start fresh" action rather than relying
+   on the header button, because the moment a user needs that choice is
+   the moment they are looking at a conversation they may not have
+   expected to see. Styled like .message-system, which is the existing
+   "the harness is telling you something about the session itself"
+   treatment, with room for the inline action. */
+.resume-banner {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: var(--lore-space-3, 0.75rem);
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: var(--lore-space-3, 0.75rem) var(--lore-space-4, 1rem);
+  border-radius: var(--lore-radius-md, 8px);
+  background: var(--lore-status-warn-bg);
+  border: 1px solid var(--lore-status-warn);
+  color: var(--lore-text-primary);
+  font-size: var(--lore-text-sm);
+  max-width: 90%;
+}
+
+.resume-banner-action {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--lore-accent, #B8860B);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.resume-banner-action:hover,
+.resume-banner-action:focus-visible {
+  opacity: 0.8;
+}
+
 /* Doherty Threshold: a chat call can run several tool-use rounds
    before replying. Previously three dots pulsing in sequence with no
    information behind them; now the actual status text streamed from

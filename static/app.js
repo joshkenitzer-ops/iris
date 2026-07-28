@@ -13,8 +13,13 @@
  *
  * The transcript itself is never held here beyond what's rendered on
  * screen: the server owns it (app/session.py's Session.messages), so
- * a page refresh just re-fetches the session's current state rather
- * than replaying a client-side history the server would have to trust.
+ * a page refresh re-fetches the session's current state rather than
+ * replaying a client-side history the server would have to trust.
+ *
+ * That was aspirational until 2026-07-28 and is now true. The re-fetch
+ * was never wired up: GET /sessions/{id} returned no transcript, and
+ * the function written to resume a saved session was never called, so
+ * a reload silently abandoned a live session. See resumeSessionIfAny().
  */
 
 const SESSION_STORAGE_KEY = "iris_session_id";
@@ -144,7 +149,7 @@ async function apiFetch(path, options) {
 async function withSessionRetry(makeRequest) {
   /* The server's session store is in memory on a single instance, so
      every deploy, restart, or idle-eviction destroys every live
-     session. bootstrapSession() handles that at page load, but a
+     session. resumeSessionIfAny() handles that at page load, but a
      session can just as easily vanish mid-conversation while the tab
      sits open, and until now that surfaced as a dead-end 404 with no
      way forward short of a manual reload.
@@ -235,8 +240,102 @@ async function initApp() {
       container.innerHTML = '<div class="feedback-unavailable">Feedback form coming soon.</div>';
     }
   }
-  // Don't create a session eagerly — wait for the user to click
-  // "Start a session." The composer stays hidden until that click.
+  // Resume a session that's still alive server-side before falling
+  // back to the empty state.
+  //
+  // This used to do nothing at all: bootstrapSession() was written to
+  // handle exactly this and was never called, referenced only from a
+  // comment. The one path to a session was the "Start a session"
+  // button, which mints a new one unconditionally and overwrites the
+  // saved id. So a reload did not merely fail to redraw the
+  // conversation, it orphaned a live session (transcript, extracted
+  // facts, rendered files, all still held server-side) and pointed the
+  // user at an empty new one. Reported live 2026-07-28 as losing the
+  // session on refresh, which is exactly what it did.
+  await resumeSessionIfAny();
+}
+
+async function resumeSessionIfAny() {
+  const saved = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!saved) {
+    return; // no prior session; the empty state is correct
+  }
+  let restored;
+  try {
+    const response = await apiFetch("/sessions/" + saved);
+    if (!response.ok) {
+      // 404 means the server restarted or evicted it. Nothing to
+      // resume, so clear the stale pointer and let the empty state
+      // stand rather than leaving a dead id in storage forever.
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      return;
+    }
+    restored = await response.json();
+  } catch (err) {
+    return; // offline or unreachable; the empty state is a safe landing
+  }
+
+  currentSessionId = saved;
+  document.getElementById("empty-state").style.display = "none";
+  document.getElementById("composer").hidden = false;
+
+  (restored.messages || []).forEach(function (message) {
+    appendMessage(message.role, message.text);
+  });
+  (restored.files || []).forEach(function (file) {
+    appendDownloadButton(file.file_id, file.filename);
+  });
+
+  if ((restored.messages || []).length) {
+    // Announced rather than restored silently, and with a way out.
+    // A conversation that reappears unexplained is its own kind of
+    // confusing: the user needs to know these turns are real context
+    // the assistant still holds, roughly how old they are, and that
+    // starting clean is one click away rather than something to go
+    // hunting for.
+    showResumeBanner(restored.last_active_seconds_ago);
+  }
+  document.getElementById("message-input").focus();
+}
+
+function describeAge(seconds) {
+  /* Deliberately coarse. The point is "is this the thing I was just
+     doing, or something from yesterday I've forgotten," and a precise
+     figure invites a precision this does not have: the session store
+     is in memory, so anything resumable is at most one process
+     lifetime old anyway. */
+  if (seconds === null || seconds === undefined) return null;
+  if (seconds < 90) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return minutes + (minutes === 1 ? " minute ago" : " minutes ago");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
+  const days = Math.round(hours / 24);
+  return days + (days === 1 ? " day ago" : " days ago");
+}
+
+function showResumeBanner(lastActiveSecondsAgo) {
+  const age = describeAge(lastActiveSecondsAgo);
+  const banner = document.createElement("div");
+  banner.className = "resume-banner";
+  banner.id = "resume-banner";
+
+  const text = document.createElement("span");
+  text.textContent = age
+    ? "Picked up where you left off, last active " + age + ". Everything above is still in context."
+    : "Picked up where you left off. Everything above is still in context.";
+  banner.appendChild(text);
+
+  const startFresh = document.createElement("button");
+  startFresh.type = "button";
+  startFresh.className = "resume-banner-action";
+  startFresh.textContent = "Start fresh instead";
+  startFresh.addEventListener("click", startNewSession);
+  banner.appendChild(startFresh);
+
+  const list = document.getElementById("message-list");
+  list.appendChild(banner);
+  banner.scrollIntoView({ behavior: "smooth", block: "end" });
 }
 
 async function startFirstSession() {
@@ -256,18 +355,6 @@ async function startFirstSession() {
     document.getElementById("empty-state").style.display = "none";
     document.getElementById("composer").hidden = false;
   }
-}
-
-async function bootstrapSession() {
-  const saved = localStorage.getItem(SESSION_STORAGE_KEY);
-  if (saved) {
-    const check = await apiFetch("/sessions/" + saved);
-    if (check.ok) {
-      return saved;
-    }
-    localStorage.removeItem(SESSION_STORAGE_KEY);
-  }
-  return createNewSession();
 }
 
 async function createNewSession() {
