@@ -74,11 +74,82 @@ def check_salutation(salutation: str) -> ToolResult:
 
 _PARAGRAPH_COUNT_REQUIRED = 4
 
+# A sign-off line: "Sincerely," "Best regards," "Thank you," and so on.
+# Deliberately matched as a short line ending in a comma rather than
+# against a fixed vocabulary, since the closing is user-adjustable
+# (T-7.3, 2026-07-24) and a fixed list would go stale.
+_SIGN_OFF_RE = re.compile(r"^[A-Z][A-Za-z ]{0,24},$")
+_SALUTATION_RE = re.compile(r"^.{0,60},$")
+
+
+def _looks_like_a_name(line: str) -> bool:
+    """A trailing bare name, with no sign-off line above it.
+
+    Keyed on the absence of sentence-ending punctuation rather than on
+    name shape: a body paragraph ends in a period, a signature does not.
+    That distinguishes the two without trying to guess what counts as a
+    plausible human name, which is not a judgment this should attempt."""
+    stripped = line.strip()
+    return (
+        0 < len(stripped) <= 60
+        and not stripped.endswith((".", "!", "?", ":", ";"))
+        and len(stripped.split()) <= 5
+    )
+
+
+def _split_letter_structure(letter_text: str) -> dict:
+    """Separates a cover letter into salutation, body paragraphs, and
+    signature block.
+
+    Splitting on blank lines alone and counting every block is what
+    broke here: a signature sitting on its own line counted as a fifth
+    paragraph, T-7.1 failed, and the model resolved the failure by
+    deleting the sender's name from the letter. That shipped a cover
+    letter with no signature (confirmed live 2026-07-28, caught by the
+    user rather than by any check). The paragraph rule was always about
+    the four BODY paragraphs, spec Phase 7: opening hook, core
+    capability, company alignment carrying the gap, closing. The
+    salutation and signature are structure around them, not paragraphs
+    subject to the count.
+
+    Heuristics are deliberately conservative: anything not confidently
+    identified as salutation or signature stays in the body, so an
+    ambiguous letter is still measured against the rule rather than
+    quietly excused from it."""
+    blocks = [b.strip() for b in letter_text.split("\n\n") if b.strip()]
+    salutation, signature = None, None
+
+    if blocks and _SALUTATION_RE.match(blocks[0]) and "\n" not in blocks[0]:
+        salutation = blocks.pop(0)
+
+    # A signature is the sign-off plus the name ("Sincerely,\nJoshua
+    # Kenitzer"), the two split across consecutive blocks, or a bare
+    # name with no sign-off at all. All three shapes appear in real
+    # letters and all three were previously counted as a paragraph.
+    if blocks:
+        last_lines = blocks[-1].splitlines()
+        if _SIGN_OFF_RE.match(last_lines[0].strip()) and len(last_lines) <= 3:
+            signature = blocks.pop()
+        elif len(last_lines) == 1 and len(blocks) > 1:
+            prior = blocks[-2].splitlines()
+            if len(prior) == 1 and _SIGN_OFF_RE.match(prior[0].strip()):
+                signature = blocks.pop(-2) + "\n" + blocks.pop()
+            elif _looks_like_a_name(last_lines[0]):
+                signature = blocks.pop()
+
+    return {"salutation": salutation, "body": blocks, "signature": signature}
+
 
 @tool(
     id="T-7.1",
     name="check_cover_letter_paragraph_count",
-    description="Checks a cover letter has exactly four paragraphs, separated by a blank line.",
+    description=(
+        "Checks a cover letter has exactly four BODY paragraphs, "
+        "separated by blank lines. The salutation and the signature "
+        "block are structure, not body paragraphs, and are excluded "
+        "from the count. Do not delete or merge a signature to satisfy "
+        "this check: a letter must keep the sender's name."
+    ),
     kind=EnforcementKind.TOOL,
     input_schema={
         "type": "object",
@@ -87,18 +158,27 @@ _PARAGRAPH_COUNT_REQUIRED = 4
     },
 )
 def check_cover_letter_paragraph_count(letter_text: str) -> ToolResult:
-    paragraphs = [p for p in letter_text.split("\n\n") if p.strip()]
-    count = len(paragraphs)
+    structure = _split_letter_structure(letter_text)
+    count = len(structure["body"])
+    data = {
+        "paragraph_count": count,
+        "has_salutation": structure["salutation"] is not None,
+        "has_signature": structure["signature"] is not None,
+    }
     if count == _PARAGRAPH_COUNT_REQUIRED:
-        return ToolResult(passed=True, data={"paragraph_count": count})
+        return ToolResult(passed=True, data=data)
     return ToolResult(
         passed=False,
-        data={"paragraph_count": count},
+        data=data,
         findings=[
             {
                 "severity": "High",
-                "issue": f"Cover letter has {count} paragraph(s); exactly {_PARAGRAPH_COUNT_REQUIRED} are required.",
-                "fix": "Restructure into: opening hook, core capability argument, company alignment (carrying any gap), closing.",
+                "issue": f"Cover letter has {count} body paragraph(s); exactly {_PARAGRAPH_COUNT_REQUIRED} are required.",
+                "fix": (
+                    "Restructure into: opening hook, core capability argument, company "
+                    "alignment (carrying any gap), closing. The salutation and signature "
+                    "are not counted; do not remove them to reach the number."
+                ),
             }
         ],
     )

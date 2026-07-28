@@ -672,8 +672,16 @@ def _upstream_error_detail(status_code: Optional[int]) -> str:
     if status_code is not None and 500 <= status_code < 600:
         return "The model API is having trouble right now. Wait a moment and try again."
     if status_code == 400:
+        # Deliberately does not name a cause. This used to assert the
+        # conversation had "grown too long", which is only one of several
+        # things a 400 means (a malformed request, an orphaned
+        # tool_result, an invalid schema), and on 2026-07-28 it sent a
+        # real incident investigation in the wrong direction: the message
+        # was confidently wrong about a session that had been poisoned by
+        # an orphaned tool_result, not by length. Say what is known and
+        # what to do; the actual status and traceback are in the logs.
         return (
-            "The model API rejected this request. This conversation may have grown too "
-            "long to continue; start a new session to reset it."
+            "The model API rejected this request. Starting a new session usually clears "
+            "it; if it keeps happening, the server logs have the detail."
         )
     return "Could not reach the model API. Try again in a moment."

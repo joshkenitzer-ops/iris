@@ -232,6 +232,29 @@ MAX_ATTACHMENT_BYTES_PER_SESSION = 12 * 1024 * 1024  # 12 MB, oldest evicted fir
 # bug fix. Env-overridable so this can be tuned without a code change.
 MAX_RESPONSE_TOKENS = int(os.environ.get("IRIS_MAX_RESPONSE_TOKENS", "32000"))
 
+# Findings returned by one run_batch_checks call.
+#
+# Added 2026-07-28 after a live failure. A batch run against a cached
+# 338-page performance export returned 5,002 findings in a single tool
+# result: 850,613 characters, roughly 212,000 tokens, which exceeds
+# Sonnet's entire 200,000-token context window before the spec, the tool
+# schemas, or any conversation history are added. The request was
+# rejected with an HTTP 400 and the session could not continue.
+#
+# This is the hole left by INLINE_EXTRACT_CHARS above. That bounded what
+# ingest_document INLINES, so a large document no longer arrives whole.
+# It did nothing about what the CHECKS return: run_batch_checks resolves
+# the full cached text server-side from attachment_id and every check
+# reports every hit, each one quoting the span it flagged. Reading the
+# document was bounded; checking it was not.
+#
+# Per-check rather than only overall, so one noisy check (an em-dash
+# sweep over 400,000 characters) cannot crowd every other check out of
+# the result. Findings are kept in severity order, so a Critical is
+# never dropped in favour of a Low.
+MAX_FINDINGS_PER_CHECK = 20
+MAX_FINDINGS_PER_BATCH = 100
+
 # Per-user /chat rate limit: max calls within the rolling window.
 #
 # Raised from 30 on 2026-07-28: confirmed live, a real new-user

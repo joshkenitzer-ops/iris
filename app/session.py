@@ -41,6 +41,18 @@ from app.config import (
 )
 
 
+def _carries_tool_result(message: Dict) -> bool:
+    """Whether a stored message contains any tool_result block.
+
+    Content is a plain string for ordinary user turns and a list of
+    blocks for tool turns, so this has to handle both shapes rather than
+    assuming either."""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+
+
 class Phase(IntEnum):
     STARTING_POINT = 0
     AUDIT = 1
@@ -298,6 +310,38 @@ class Session:
         # the real ceilings (MAX_INGEST_TEXT_CHARS, INLINE_EXTRACT_CHARS)
         # already bound how large any single message can get.
         while len(self.messages) > 1 and self.transcript_chars() > MAX_TRANSCRIPT_CHARS:
+            self.messages.pop(0)
+
+        self._drop_orphaned_tool_results()
+
+    def _drop_orphaned_tool_results(self) -> None:
+        """Ensures the transcript never begins with a tool_result whose
+        tool_use was trimmed away.
+
+        The Anthropic API rejects that shape outright: every tool_result
+        must be preceded by the assistant tool_use it answers. Trimming
+        by character budget alone is blind to that pairing, so popping
+        an assistant message carrying a tool_use while keeping the user
+        message carrying its tool_result produced a transcript the API
+        refused with a 400.
+
+        The failure was worse than a single rejected request. The
+        orphaned block stayed at the head of the stored transcript, so
+        every later turn in that session rebuilt the same invalid
+        request and got the same 400 - unrecoverable without starting
+        over. Confirmed live 2026-07-28 (a 338-page performance export;
+        see MAX_FINDINGS_PER_CHECK in config.py for the oversized tool
+        result that triggered the trim in the first place).
+
+        Deliberately not guarded by "keep at least one message" the way
+        the character trim above is. A tool_result at the head is
+        orphaned by definition, since a valid one is always preceded by
+        its tool_use, so dropping it is right however few remain.
+        Emptying the transcript is a clean state: the next turn opens
+        with the user's new message, which is exactly a fresh
+        conversation. Keeping one invalid message instead would preserve
+        the 400 forever, which is the bug."""
+        while self.messages and _carries_tool_result(self.messages[0]):
             self.messages.pop(0)
 
     def transcript_chars(self) -> int:

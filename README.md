@@ -8,16 +8,28 @@ Formerly Hermes. Renamed 2026-07-21 after a naming collision with commercial "He
 
 ---
 
+## Status
+
+**Live, in private beta.** Deployed to Render as `iris-harness`, behind Clerk authentication, in front of a small group of trusted testers since 2026-07-27.
+
+Nine-phase pipeline working end to end: upload or start from scratch, adversarial audit, foundational resume build, fit check against a job description, tailoring, paired cover letter, three-tier final review, docx delivery. Observed timings on a full-size real resume: audit ~1 minute, foundational build ~3 minutes, fit check under a minute.
+
+597 tests passing. Not yet public, and not yet on production Clerk keys.
+
 ## What this repository holds
 
-Iris is being built as an **agentic harness**, not a traditional application. There is no pipeline of services calling a model at fixed points. There is a specification that functions as pinned context, a set of deterministic tools the model must invoke, and a model operating under both.
+Iris is built as an **agentic harness**, not a traditional application. There is no pipeline of services calling a model at fixed points. There is a specification that functions as pinned context, a set of deterministic tools the model must invoke, and a model operating under both.
 
 That makes the spec the source of truth rather than documentation. It is versioned, diffed, and reviewed like any other source file.
 
-| File | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `iris-spec.md` | The rules. Two tiers: a stable Constitution and an appendable Decision Log. |
-| `iris-tool-list.md` | The enforcement inventory. 142 items, each classified by how it is enforced. |
+| `docs/iris-spec.md` | The rules. Two tiers: a stable Constitution and an appendable Decision Log. |
+| `docs/iris-tool-list.md` | The enforcement inventory. Every item classified by how it is enforced. |
+| `app/` | The harness. FastAPI routes, the tool registry, gates, session state. |
+| `app/tools/` | The deterministic checks themselves, one module per pipeline area. |
+| `static/` | Single-page frontend, served same-origin. |
+| `tests/` | 53 files. Includes reachability tests, see Testing below. |
 
 Read the spec first. Read the tool list when you need to know how a rule is enforced.
 
@@ -39,23 +51,52 @@ Binding on the development harness and on any model editing the spec. It does no
 4. New calls append to Part II. Promotion into Part I is deliberate.
 5. Threshold values tuned against real documents live in code config, not in the spec. Tuning must not require an amendment.
 
-Rule 5 matters more than it looks. Anything empirical (extraction confidence thresholds, banned-term frequency limits) belongs in config, or every tuning pass becomes a constitutional amendment.
+Rule 5 matters more than it looks. Anything empirical (extraction confidence thresholds, banned-term frequency limits, context and memory ceilings) belongs in `app/config.py`, or every tuning pass becomes a constitutional amendment.
 
 ## Enforcement model
 
 Every capability is classified by how it is enforced. The classification is the point: it decides what code must do and what the model is trusted with.
 
-| Kind | Definition | Count |
+| Kind | Definition | Registered |
 | --- | --- | --- |
-| `TOOL` | Deterministic code the model must invoke. The model never performs this by reading. | 76 |
-| `GATE` | Deterministic blocker. Delivery or phase advance cannot proceed while it fails. | 20 |
+| `TOOL` | Deterministic code the model must invoke. The model never performs this by reading. | 72 |
+| `GATE` | Deterministic blocker. Delivery or phase advance cannot proceed while it fails. | 10 |
 | `HYBRID` | Tool nominates candidates cheaply, model adjudicates. Recall from code, precision from judgment. | 15 |
-| `JUDGMENT` | Constitution-guided model judgment with a dedicated critic. Never a single generation pass. | 36 |
-| `HUMAN` | Escalates to the user. The model may recommend, never decides. | 6 |
+| `JUDGMENT` | Constitution-guided model judgment with a dedicated critic. Never a single generation pass. | not registered |
+| `HUMAN` | Escalates to the user. The model may recommend, never decides. | not registered |
 
-Counts overlap: some items carry two kinds.
+97 items are registered in code. `JUDGMENT` and `HUMAN` are real classifications in the enforcement model but have no deterministic handler to register, by definition; they are described in the spec and carried out by the model under it.
+
+`tests/test_spec_sync.py` fails if a tool registered in code disagrees with the tool list about its own enforcement kind. That guard exists because splitting rules from enforcement created a drift surface the spec itself names as a risk.
 
 Four rules govern the classification. The load-bearing one: **a model asserting compliance, without an underlying deterministic scan, never clears a Critical or Pedantic finding.** A model cannot count pages, cannot reliably detect an altered figure, and cannot be trusted to have checked something it says it checked.
+
+## Testing
+
+```bash
+python -m pytest -q
+```
+
+One test costs money and needs a network (`test_claude_client_smoke.py`); it skips automatically unless `ANTHROPIC_API_KEY` is set.
+
+**Enforcement is tested through `registry.dispatch`, the path a real model tool call takes, not by calling gate functions directly.** This is a standard rather than a style preference. A production readiness review on 2026-07-27 found the delivery gates correct, fully unit-tested, and *never called by anything*: the tests invoked the route directly, so they proved the function worked while the product shipped ungated. Tests for enforcement now assert reachability, because a test that calls the gate directly is exactly the kind that passed while the gate was dead.
+
+## Running locally
+
+Requires `ANTHROPIC_API_KEY`, `CLERK_ISSUER`, and `CLERK_PUBLISHABLE_KEY`. See `SETUP.md`.
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+The app refuses to boot if a required Clerk value is missing, deliberately: a missing key used to surface as a silently broken sign-in form in the browser, which is a far worse way to find out.
+
+## Deployment
+
+Render, single always-on instance, `render.yaml`. `autoDeploy` is **off on purpose**: session state is in memory, so an automatic deploy would drop every in-flight session. Deploys are manual and deliberate.
+
+The in-memory session store is a known, accepted V1 limitation, not an oversight. V2 replaces it with account-based storage behind the same interface.
 
 ## Citation convention
 
@@ -63,13 +104,19 @@ Tool-list items carry a `T-` prefix and are cited inline as `(T-3.1)`.
 
 Bare decimal numbers in the spec are its own section numbers and never refer to the tool list. The prefix exists because the two schemes otherwise collide: spec section 5.9 and tool item 5.9 are unrelated rules. Never cite a bare number across files.
 
+## Terminology
+
+The document a user builds once and tailors many times is the **foundational resume**. It was called the "master resume" until 2026-07-28, when a beta tester flagged the term as carrying negative connotations. The rename went through code, filenames, tool names, and prose together rather than UI text alone, so nothing in the codebase should say "master" today.
+
 ## Contributing
 
 **Before changing a rule.** Read the Decision Log first. Several rules have been reversed deliberately, with the original reasoning preserved rather than deleted. A rule that looks wrong may have been argued already.
 
-**When changing a rule.** Follow the amendment protocol. Update the tool list in the same commit if enforcement changes; the two files drifting apart is the failure mode this structure was built to prevent.
+**When changing a rule.** Follow the amendment protocol. Update the tool list in the same commit if enforcement changes; the two files drifting apart is the failure mode this structure was built to prevent, and `test_spec_sync.py` will catch you.
 
 **When adding a rule.** State how it is enforced, along with what it requires. A rule with no enforcement path is a preference.
+
+**When adding a check.** Wire it to something. The most expensive defects found in this codebase were not wrong logic; they were correct logic nothing ever called.
 
 **Self-checks.** The spec is held to its own language standards by convention: no em dashes, no banned vocabulary. Run those checks against the spec itself before committing.
 
@@ -81,9 +128,3 @@ Bare decimal numbers in the spec are its own section numbers and never refer to 
 - `hermes` repository: deprecated. Original application architecture, kept for history.
 
 Iris calls none of them at runtime. It is standalone by design principle, not by accident of scheduling.
-
-## Status
-
-Spec complete as of 2026-07-24. 19 EARS requirements, all buildable. One open item, non-blocking: read the locked Lore palette tokens before UI work.
-
-Not yet built.

@@ -220,7 +220,14 @@ class TestRunBatchChecksAcceptsHybrid(unittest.TestCase):
         )
         self.assertFalse(result.passed)
         self.assertTrue(any("run-on" in f["issue"].lower() for f in result.findings))
-        self.assertEqual(result.data["summary"], [{"tool_id": "T-3.13", "passed": False}])
+        # Asserts the fields this test is actually about (the HYBRID ran
+        # and reported) rather than the exact summary dict: pinning the
+        # whole shape broke on an additive change when per-check finding
+        # counts were added for the 2026-07-28 truncation fix.
+        summary = result.data["summary"]
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary[0]["tool_id"], "T-3.13")
+        self.assertFalse(summary[0]["passed"])
 
     def test_hybrid_and_tool_checks_batch_together_in_one_call(self) -> None:
         session, attachment_id = _session_with_docx_attachment(

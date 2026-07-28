@@ -22,7 +22,13 @@ import io
 import logging
 from typing import List
 
-from app.config import EXTRACTION_CONFIDENCE, INLINE_EXTRACT_CHARS, MAX_INGEST_TEXT_CHARS
+from app.config import (
+    EXTRACTION_CONFIDENCE,
+    INLINE_EXTRACT_CHARS,
+    MAX_FINDINGS_PER_BATCH,
+    MAX_FINDINGS_PER_CHECK,
+    MAX_INGEST_TEXT_CHARS,
+)
 from app.enforcement import EnforcementKind, ToolResult, registry, tool
 from app.session import Attachment, Session
 from app.untrusted_text import wrap_untrusted
@@ -253,6 +259,26 @@ def _ingest_pdf(raw: bytes, attachment: Attachment) -> ToolResult:
         passed=True,
         data=_extraction_payload(text, "uploaded .pdf", attachment, {"page_count": len(reader.pages)}),
     )
+
+
+_SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+
+
+def _cap_findings(findings: list, limit: int) -> tuple:
+    """Returns (kept, suppressed_count), keeping the most severe first.
+
+    Order matters more than it looks: an unordered truncation over a
+    long document drops whichever findings happen to sort last, and an
+    em-dash sweep emitting thousands of Lows would bury the handful of
+    Criticals that actually block delivery. Sorting first guarantees
+    severity survives truncation.
+
+    Stable within a severity, so findings stay in document order for any
+    check that emits them that way."""
+    if len(findings) <= limit:
+        return list(findings), 0
+    ordered = sorted(findings, key=lambda f: _SEVERITY_ORDER.get(f.get("severity"), 99))
+    return ordered[:limit], len(findings) - limit
 
 
 _READ_SPAN_MAX = 40_000
@@ -863,6 +889,7 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
     per_tool = []
     all_passed = True
     all_findings = []
+    suppressed_total = 0
 
     for tid in tool_ids:
         try:
@@ -885,8 +912,32 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
                 all_passed = False
                 continue
             result = registry.dispatch_by_id(tid, inputs, session=session)
-            per_tool.append({"tool_id": tid, "passed": result.passed})
-            all_findings.extend(result.findings)
+            kept, suppressed = _cap_findings(result.findings, MAX_FINDINGS_PER_CHECK)
+            suppressed_total += suppressed
+            per_tool.append({
+                "tool_id": tid,
+                "passed": result.passed,
+                "finding_count": len(result.findings),
+                "returned_count": len(kept),
+            })
+            all_findings.extend(kept)
+            if suppressed:
+                # Carried as a finding, not in `data`: claude_client
+                # strips the data payload from batch results, so a count
+                # recorded only there never reaches the model. Silently
+                # returning 20 of 5,002 would let it conclude the
+                # document is nearly clean.
+                all_findings.append({
+                    "severity": "High",
+                    "issue": (
+                        f"{tid} produced {len(result.findings)} findings; "
+                        f"{len(kept)} shown, {suppressed} not listed."
+                    ),
+                    "fix": (
+                        "Treat this as a pervasive pattern rather than a list to work "
+                        "through one by one. Fix it at the source and re-run the check."
+                    ),
+                })
             if not result.passed:
                 all_passed = False
         except Exception as exc:  # noqa: BLE001
@@ -898,8 +949,21 @@ def run_batch_checks(tool_ids: list, inputs: dict, session: "Session") -> ToolRe
             per_tool.append({"tool_id": tid, "passed": False})
             all_passed = False
 
+    # Overall backstop. The per-check cap above already bounds the common
+    # case; this catches a batch of many checks each returning just under
+    # their own limit, which multiplies out past what any single one
+    # would have triggered.
+    if len(all_findings) > MAX_FINDINGS_PER_BATCH:
+        all_findings, batch_suppressed = _cap_findings(all_findings, MAX_FINDINGS_PER_BATCH)
+        suppressed_total += batch_suppressed
+        all_findings.append({
+            "severity": "High",
+            "issue": f"Batch returned more than {MAX_FINDINGS_PER_BATCH} findings; {batch_suppressed} further findings not listed.",
+            "fix": "Address the dominant patterns first, then re-run this batch to see what remains.",
+        })
+
     return ToolResult(
         passed=all_passed,
         findings=all_findings,
-        data={"summary": per_tool},
+        data={"summary": per_tool, "suppressed_finding_count": suppressed_total},
     )

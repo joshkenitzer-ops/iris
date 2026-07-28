@@ -328,12 +328,40 @@ def render_resume_docx_tool(sections: list, filename: str, session: Session, fon
 
     docx_bytes = generate_resume_docx(pairs, font_name=font_name)
     b64 = base64.b64encode(docx_bytes).decode("ascii")
+
+    # Length check, at the one point the rendered document actually
+    # exists. estimate_page_count (T-4.11) and its companion T-4.12 were
+    # written but called from nowhere: not in any documented batch list,
+    # not referenced by Tailoring or Final Review. Confirmed live
+    # 2026-07-28, a tailored resume came out at 6 pages against the
+    # 1-2 page target with nothing in the pipeline to notice. Same shape
+    # as the delivery-gate finding a day earlier, a correct check that
+    # was simply never invoked.
+    #
+    # Advisory, not gating, deliberately. T-4.11 reports Low severity
+    # because the estimate is a heuristic with a real margin of error
+    # (python-docx does no layout); blocking a render on an approximation
+    # would be wrong. The model sees the finding and can act on it.
+    #
+    # Deliverables only. Spec Phase 2 is explicit that the foundational
+    # resume "has no length ceiling; comprehensiveness is its purpose,"
+    # so measuring it against a tailored target would flag every one.
+    length_findings = []
+    if _is_deliverable(filename):
+        from app.tools.page_estimate import estimate_page_count
+
+        length_findings = estimate_page_count(b64).findings
+
     rendered = session.add_rendered_file(
         filename=filename,
         content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         data_base64=b64,
     )
+    # passed stays True even when the length finding fires: the file was
+    # produced and is downloadable. The finding is information for the
+    # model to act on, not a failure of the render.
     return ToolResult(
         passed=True,
+        findings=length_findings,
         data={"file_id": rendered.id, "filename": rendered.filename},
     )

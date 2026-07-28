@@ -26,6 +26,73 @@ class TestCoverLetterParagraphCount(unittest.TestCase):
         self.assertFalse(result.passed)
 
 
+class TestSignatureIsNotABodyParagraph(unittest.TestCase):
+    """Regression coverage for a live defect (2026-07-28). Counting every
+    blank-line block made a signature the fifth paragraph, so T-7.1
+    failed on a correct letter, and the model resolved the failure by
+    deleting the sender's name. A cover letter shipped with no signature
+    and only the user caught it.
+
+    The paragraph rule was always about the four BODY paragraphs (spec
+    Phase 7). Salutation and signature are structure around them."""
+
+    BODY = (
+        "Dear Hiring Manager,\n\n"
+        "Opening hook referencing the role.\n\n"
+        "Core capability argument with quantified evidence.\n\n"
+        "Company alignment carrying the honest gap.\n\n"
+        "Closing that invites a conversation."
+    )
+
+    def test_sign_off_and_name_together(self) -> None:
+        result = check_cover_letter_paragraph_count(self.BODY + "\n\nSincerely,\nJoshua Kenitzer")
+        self.assertTrue(result.passed)
+        self.assertEqual(result.data["paragraph_count"], 4)
+        self.assertTrue(result.data["has_signature"])
+
+    def test_bare_name_with_no_sign_off(self) -> None:
+        """The shape seen live: just the name on its own line."""
+        result = check_cover_letter_paragraph_count(self.BODY + "\n\nJoshua Kenitzer")
+        self.assertTrue(result.passed)
+        self.assertTrue(result.data["has_signature"])
+
+    def test_sign_off_and_name_as_separate_blocks(self) -> None:
+        result = check_cover_letter_paragraph_count(self.BODY + "\n\nSincerely,\n\nJoshua Kenitzer")
+        self.assertTrue(result.passed)
+        self.assertTrue(result.data["has_signature"])
+
+    def test_salutation_is_not_counted(self) -> None:
+        result = check_cover_letter_paragraph_count(self.BODY)
+        self.assertTrue(result.passed)
+        self.assertTrue(result.data["has_salutation"])
+
+    def test_a_genuinely_short_letter_still_fails(self) -> None:
+        """The check must not become permissive: excluding structure is
+        not the same as excusing a letter from the rule."""
+        result = check_cover_letter_paragraph_count(
+            "Dear Hiring Manager,\n\nOne.\n\nTwo.\n\nSincerely,\nJoshua Kenitzer"
+        )
+        self.assertFalse(result.passed)
+        self.assertEqual(result.data["paragraph_count"], 2)
+
+    def test_a_genuinely_long_letter_still_fails(self) -> None:
+        result = check_cover_letter_paragraph_count(
+            "Dear Hiring Manager,\n\nOne.\n\nTwo.\n\nThree.\n\nFour.\n\nFive.\n\nSincerely,\nJoshua Kenitzer"
+        )
+        self.assertFalse(result.passed)
+        self.assertEqual(result.data["paragraph_count"], 5)
+
+    def test_a_short_final_paragraph_is_not_mistaken_for_a_name(self) -> None:
+        """A real paragraph ends in sentence punctuation; a signature
+        does not. That is the whole distinction, so it has to hold for a
+        genuinely brief closing line."""
+        result = check_cover_letter_paragraph_count(
+            "Dear Hiring Manager,\n\nOne.\n\nTwo.\n\nThree.\n\nI look forward to it."
+        )
+        self.assertTrue(result.passed)
+        self.assertFalse(result.data["has_signature"])
+
+
 class TestCoverLetterWordCount(unittest.TestCase):
     def test_in_range_passes(self) -> None:
         letter = " ".join(["word"] * 300)
