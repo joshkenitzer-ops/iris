@@ -94,6 +94,7 @@
 | T-8.9 | check_figures_against_foundational | TOOL | Extraction plus comparison. |
 | T-9.14 | get_todays_date | TOOL |  |
 | T-9.15 | run_batch_checks | TOOL |  |
+| T-9.16 | advance_phase | GATE | Added 2026-07-28. Phase advancement as a tool the model must invoke, with the transition gates enforced deterministically inside dispatch. Exists because those gates lived only in `POST /advance-phase`, which `static/app.js` never calls, so every session stayed in STARTING_POINT and T-1.8 and T-5.2 never fired once in production. The model knows when a phase's work is done, which is judgment; the harness decides whether the advance is permitted, which is not. Refuses with a finding rather than raising, so a blocked advance is recoverable by doing the missing work. |
 | T-9.2 | get_inventory_section_facts | TOOL | One tool call per section beats every section in every request. |
 | T-9.4 | generate_amendment_diff | TOOL |  |
 | T-9.7 | check_batch_state | TOOL |  |

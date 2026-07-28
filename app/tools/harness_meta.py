@@ -139,3 +139,112 @@ def generate_move_item_command(filename: str, destination_dir: str) -> ToolResul
     destination = f"{destination_dir.rstrip(chr(92)).rstrip('/')}\\{filename}"
     command = f'Move-Item -Path "$HOME\\Downloads\\{filename}" -Destination "{destination}" -Force'
     return ToolResult(passed=True, data={"command": command})
+
+
+@tool(
+    id="T-9.16",
+    name="advance_phase",
+    description=(
+        "Advances the session to a named pipeline phase. Call this when "
+        "the current phase's work is genuinely finished, before starting "
+        "the next one. The harness checks the gates that guard the "
+        "transition and REFUSES the advance if any fails, so a phase "
+        "cannot be entered on the strength of an assertion that its "
+        "prerequisites were met. Valid targets: STARTING_POINT, AUDIT, "
+        "FOUNDATIONAL_BUILD, SLOP_AUDIT, FORMATTING, FIT_CHECK, "
+        "TAILORING, COVER_LETTER, FINAL_REVIEW."
+    ),
+    kind=EnforcementKind.GATE,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "target_phase": {
+                "type": "string",
+                "description": "Phase name, e.g. FOUNDATIONAL_BUILD.",
+            }
+        },
+        "required": ["target_phase"],
+    },
+    blocking=True,
+    needs_session=True,
+)
+def advance_phase_tool(target_phase: str, session: Session) -> ToolResult:
+    """T-9.16. Phase advancement, as a tool the model must invoke.
+
+    Added 2026-07-28. The gates guarding phase transitions were written,
+    tested, and correct, and lived only inside POST /advance-phase,
+    which static/app.js never calls. Every session therefore sat in
+    STARTING_POINT for its entire life and every gate hanging off a
+    phase boundary was inert: require_phase1_disposition (T-1.8) never
+    blocked a Foundational Build over an unresolved audit Critical, and
+    require_registry_populated (T-5.2) never blocked a Fit Check on an
+    empty registry. Both were shipped protections that had never once
+    protected anyone.
+
+    The division of labour here is the harness's core pattern rather
+    than a convenience. The MODEL knows when a phase's work is done,
+    which is judgment and cannot be computed. The HARNESS decides
+    whether the advance is permitted, which is deterministic and must
+    never be delegated. So the model asks, and code answers.
+
+    Returns passed=False rather than raising, matching the delivery
+    gate in docx_render: a raise becomes a generic "tool failed to run"
+    that tells the model nothing it can act on, whereas a finding names
+    the gate, says what is unresolved, and leaves the session exactly
+    where it was. A refused advance is recoverable by doing the missing
+    work, never a dead end."""
+    from app.gates import (
+        GateBlocked,
+        require_fit_check_completed,
+        require_phase1_disposition,
+        require_registry_populated,
+    )
+    from app.session import Phase
+
+    try:
+        target = Phase[target_phase.strip().upper()]
+    except KeyError:
+        return ToolResult(
+            passed=False,
+            findings=[
+                {
+                    "severity": "High",
+                    "issue": f"'{target_phase}' is not a phase name.",
+                    "fix": "Use one of: " + ", ".join(p.name for p in Phase),
+                }
+            ],
+        )
+
+    previous = session.phase
+    try:
+        # Same checks, same order, as the /advance-phase route. Phase 8
+        # is deliberately absent: it is gated on the way OUT, at
+        # delivery, by require_no_open_criticals at the render
+        # chokepoint, not on the way in.
+        if target == Phase.FOUNDATIONAL_BUILD:
+            require_phase1_disposition(session)
+        if target in (Phase.FIT_CHECK, Phase.TAILORING):
+            require_registry_populated(session)
+        if target == Phase.TAILORING:
+            require_fit_check_completed(session)
+    except GateBlocked as exc:
+        return ToolResult(
+            passed=False,
+            findings=[
+                {
+                    "severity": "Critical",
+                    "issue": f"[{exc.gate_id}] {exc.message}",
+                    "fix": (
+                        f"The session is still in {previous.name}. Complete the "
+                        "outstanding work, then advance again."
+                    ),
+                }
+            ],
+            data={"blocked_by_gate": exc.gate_id, "phase": previous.name},
+        )
+
+    session.phase = target
+    return ToolResult(
+        passed=True,
+        data={"phase": target.name, "previous_phase": previous.name},
+    )

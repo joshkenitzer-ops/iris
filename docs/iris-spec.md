@@ -553,6 +553,20 @@ A new-user test uploaded a 338-page performance export. Ingestion worked, Iris s
 
 **Communication standards added to Principle 10.** Document content goes to the renderer, never into the chat: writing a resume out as prose and then rendering it generates the same document twice and bills for both. Chat responses are conversational, not formatted documents.
 
+## 2026-07-28 (later still): the phase machine made real
+
+A reachability guard added this day (`tests/test_reachability_guard.py`) turned a footnote into a finding. `POST /sessions/{id}/advance-phase` was fully implemented and correct, and `static/app.js` never called it. Every session therefore stayed in `STARTING_POINT` for its entire life, and every gate hanging off a phase boundary was inert. `require_phase1_disposition` (T-1.8) never once blocked a Foundational Build over an unresolved audit Critical. `require_registry_populated` (T-5.2) never once blocked a Fit Check on an empty registry. Both had shipped, both passed their tests, and neither had ever protected a user. Same shape as the 2026-07-27 delivery-gate finding and the T-4.11 length finding: correct logic nothing invoked.
+
+**Advancement is now a tool the model must invoke (T-9.16, GATE).** The division is the harness's central pattern rather than a convenience. Knowing that a phase's work is finished is judgment and cannot be computed, so the model asks. Deciding whether the advance is permitted is deterministic and must never be delegated, so code answers. A refused advance returns findings and leaves the session exactly where it was, matching the delivery gate: a raise becomes a generic "tool failed to run" the model cannot act on, whereas a finding names the gate and says what is outstanding. Refusal is a redirect, never a dead end.
+
+**Fit Check completion is derived, never asserted.** T-5.1 requires a Fit Check before Tailoring on every submission, and until now nothing in the codebase ever set `session.fit_check_completed` to `True`. The gate was unenforceable: wiring it would have blocked Tailoring permanently rather than restoring a dormant protection. The obvious remedy, a `record_fit_check_complete` tool, is precisely the model self-report rule 4.1 refuses to accept as enforcement, since it would let the model claim a Fit Check it never ran. The flag is instead set as a side effect of `check_jd_phrase_coverage` (T-6.8) actually executing, so it can only become true because the deterministic JD-to-registry comparison ran. `ingest_job_description` (T-6.1) still resets it on every new JD, so a pass against a previous submission cannot satisfy the next.
+
+**Phase 5 was never missing its tools.** An earlier reading of this review concluded Phase 5 had no registered tools, on the evidence that no tool carries a `T-5.x` id. That was wrong. All four tools this document names in the Phase 5 batch list exist and are registered under `T-6.x`. The Fit Check has been deterministically implemented throughout; what was missing was any record that it had run. Recorded because the wrong version of this finding would have justified building tools that already exist.
+
+**Where each gate belongs.** Gates that are pure functions of the artifact (T-8.18, T-7.8, T-6.14) stay at the render chokepoint, where the deliverable comes into existence. Gates that read session state (T-1.8, T-5.1, T-5.2) belong at the phase boundary, where that state is being asserted. The distinction is the cost of a false positive: refusing a phase transition tells the model to finish the missing work and leaves the session usable, while refusing a render tells a user their finished document does not exist, over bookkeeping they cannot see and did not cause.
+
+**`POST /advance-phase` is retained** and unchanged. It is no longer the only path, and no longer the path that matters.
+
 ## Open items
 
 - **Two of six service names.** v0.9 names `buildService`, `tailorService`, and `docxService`; the handoff adds `reviewService`. Two remain unnamed, as does the mapping of nine phases onto six services.

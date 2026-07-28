@@ -1,5 +1,7 @@
 import unittest
 
+from app.session import Session
+
 from app.tools.consistency import check_figure_consistency
 from app.tools.cover_letter import check_salutation
 from app.tools.delivery import check_unresolved_markers
@@ -7,10 +9,19 @@ from app.tools.tailoring import check_jd_phrase_coverage
 
 
 class TestJDPhraseCoverage(unittest.TestCase):
+    """check_jd_phrase_coverage gained a session parameter on
+    2026-07-28: running it is what marks the Fit Check complete
+    (T-5.1), derived rather than asserted. The coverage behaviour these
+    tests cover is unchanged."""
+
+    def setUp(self) -> None:
+        self.session = Session(session_id="s", user_id="u")
+
     def test_all_phrases_present_passes(self) -> None:
         result = check_jd_phrase_coverage(
             jd_phrases=["cross-functional", "roadmap"],
             resume_text="Led cross-functional teams to define the product roadmap.",
+            session=self.session,
         )
         self.assertTrue(result.passed)
 
@@ -18,6 +29,7 @@ class TestJDPhraseCoverage(unittest.TestCase):
         result = check_jd_phrase_coverage(
             jd_phrases=["stakeholder alignment"],
             resume_text="Led product strategy across three teams.",
+            session=self.session,
         )
         self.assertFalse(result.passed)
         self.assertIn("stakeholder alignment", result.data["missing_phrases"])
@@ -26,7 +38,9 @@ class TestJDPhraseCoverage(unittest.TestCase):
 
     def test_case_insensitive_match(self) -> None:
         result = check_jd_phrase_coverage(
-            jd_phrases=["Cross-Functional"], resume_text="worked in a cross-functional pod"
+            jd_phrases=["Cross-Functional"],
+            resume_text="worked in a cross-functional pod",
+            session=self.session,
         )
         self.assertTrue(result.passed)
 

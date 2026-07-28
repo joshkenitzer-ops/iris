@@ -65,33 +65,13 @@ GATE_EXEMPTIONS = {
         "T-9.5, same reasoning as T-9.6: amendment protocol, development "
         "harness only, never reached by a running session."
     ),
-    # The three below are called ONLY from advance_phase, whose route
-    # the frontend never invokes. This guard counts that as unreachable
-    # on purpose (see _dead_route_handler_names), which is what makes it
-    # able to catch the original incident rather than merely describe
-    # it. They are listed here as known and reasoned, not as fixed.
-    "require_phase1_disposition": (
-        "T-1.8 blocks Phase 2 while a Phase 1 Critical is undispositioned, and "
-        "its only caller is the dead /advance-phase route. Not wired to the "
-        "render chokepoint because require_no_open_criticals (T-8.18) already "
-        "runs there and is strictly stronger: it blocks delivery on ANY open "
-        "Critical regardless of phase. The user-facing protection is intact; "
-        "what is missing is the phase-boundary version of it."
-    ),
-    "require_fit_check_completed": (
-        "T-5.1 reads session.fit_check_completed, which NOTHING sets to True: "
-        "Phase 5 has zero registered tools. Wiring it at the render chokepoint "
-        "would not restore a dormant protection, it would permanently block "
-        "every tailored resume download. See "
-        "test_nothing_sets_fit_check_completed_to_true in "
-        "test_delivery_gate_on_render.py, which fails once a setter exists."
-    ),
-    "require_registry_populated": (
-        "T-5.2 depends on the model having called extract_facts_into_registry. "
-        "Only caller is the dead /advance-phase route. Deliberately NOT moved "
-        "to the render chokepoint: a gate that turns a missed model call into "
-        "an undownloadable document is worse than the risk it covers."
-    ),
+    # require_phase1_disposition (T-1.8), require_registry_populated
+    # (T-5.2), and require_fit_check_completed (T-5.1) were listed here
+    # until 2026-07-28, when advance_phase (T-9.16) made them reachable
+    # for the first time. Their only prior caller was the dead
+    # /advance-phase route. Left as a note rather than deleted silently:
+    # an allowlist that only ever grows teaches nothing about whether
+    # the problems on it get solved.
 }
 
 

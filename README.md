@@ -14,7 +14,7 @@ Formerly Hermes. Renamed 2026-07-21 after a naming collision with commercial "He
 
 Nine-phase pipeline working end to end: upload or start from scratch, adversarial audit, foundational resume build, fit check against a job description, tailoring, paired cover letter, three-tier final review, docx delivery. Observed timings on a full-size real resume: audit ~1 minute, foundational build ~3 minutes, fit check under a minute.
 
-661 tests passing. Not yet public, and not yet on production Clerk keys.
+681 tests passing. Not yet public, and not yet on production Clerk keys.
 
 ## What this repository holds
 
@@ -30,7 +30,7 @@ That makes the spec the source of truth rather than documentation. It is version
 | `app/tools/` | The deterministic checks themselves, one module per pipeline area. |
 | `static/` | Single-page frontend, served same-origin. |
 | `app/usage.py` | Per-turn token and cost accounting. Attribution reads the tool list, not `Phase`. |
-| `tests/` | 56 files. Includes the reachability guard, see Testing below. |
+| `tests/` | 57 files. Includes the reachability guard, see Testing below. |
 
 Read the spec first. Read the tool list when you need to know how a rule is enforced.
 
@@ -61,12 +61,12 @@ Every capability is classified by how it is enforced. The classification is the 
 | Kind | Definition | Registered |
 | --- | --- | --- |
 | `TOOL` | Deterministic code the model must invoke. The model never performs this by reading. | 72 |
-| `GATE` | Deterministic blocker. Delivery or phase advance cannot proceed while it fails. | 10 |
+| `GATE` | Deterministic blocker. Delivery or phase advance cannot proceed while it fails. | 11 |
 | `HYBRID` | Tool nominates candidates cheaply, model adjudicates. Recall from code, precision from judgment. | 15 |
 | `JUDGMENT` | Constitution-guided model judgment with a dedicated critic. Never a single generation pass. | not registered |
 | `HUMAN` | Escalates to the user. The model may recommend, never decides. | not registered |
 
-97 items are registered in code. `JUDGMENT` and `HUMAN` are real classifications in the enforcement model but have no deterministic handler to register, by definition; they are described in the spec and carried out by the model under it.
+98 items are registered in code. `JUDGMENT` and `HUMAN` are real classifications in the enforcement model but have no deterministic handler to register, by definition; they are described in the spec and carried out by the model under it.
 
 `tests/test_spec_sync.py` fails if a tool registered in code disagrees with the tool list about its own enforcement kind. That guard exists because splitting rules from enforcement created a drift surface the spec itself names as a risk.
 

@@ -202,14 +202,16 @@ class TestSessionStateGatesAreDeliberatelyNotWiredHere(unittest.TestCase):
     """Guards a decision that looks like an omission.
 
     require_fit_check_completed (T-5.1) and require_registry_populated
-    (T-5.2) are NOT enforced at render, and that is deliberate. Nothing
-    in the codebase ever sets session.fit_check_completed to True:
-    Phase 5 has zero registered tools, so there is nothing to set it.
-    Adding that gate here would not restore a dormant protection, it
-    would permanently block every tailored resume download.
+    (T-5.2) are enforced at the PHASE boundary (advance_phase, T-9.16),
+    not at render, and that separation is deliberate. Blocking a phase
+    transition tells the model to go do the missing work and leaves the
+    session usable. Blocking a render tells a user their finished
+    document does not exist, over bookkeeping they cannot see and did
+    not cause.
 
-    This test fails the moment someone "fixes" the omission, and points
-    at the setter that has to exist first."""
+    The render chokepoint takes gates that are pure functions of the
+    artifact (T-8.18, T-7.8, T-6.14). Session-state gates belong where
+    the state is actually being asserted."""
 
     def test_a_tailored_render_succeeds_without_a_recorded_fit_check(self) -> None:
         session = Session(session_id="s", user_id="u")
@@ -221,17 +223,44 @@ class TestSessionStateGatesAreDeliberatelyNotWiredHere(unittest.TestCase):
         self.assertTrue(session.is_registry_empty())
         self.assertTrue(_render(session, DELIVERABLE).passed)
 
-    def test_nothing_sets_fit_check_completed_to_true(self) -> None:
-        """The precondition for wiring T-5.1. When this fails, a setter
-        exists and the gate can be reconsidered."""
+    def test_fit_check_completion_is_derived_never_asserted(self) -> None:
+        """The successor to a test that asserted NO setter existed.
+
+        That test was written when nothing set fit_check_completed and
+        wiring T-5.1 would have blocked every tailored download. It
+        fired on 2026-07-28 exactly as intended, the moment a setter
+        landed. What replaces it guards the property that made adding a
+        setter acceptable: the flag is a side effect of the
+        deterministic JD comparison running, never something a tool
+        takes as an argument or a model can assert. Spec rule 4.1."""
         import pathlib
 
-        hits = []
+        offenders = []
         for path in pathlib.Path("app").rglob("*.py"):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                if "fit_check_completed" in line and "= True" in line:
-                    hits.append(f"{path}:{i}")
-        self.assertEqual(hits, [], f"A setter now exists ({hits}); reconsider wiring T-5.1.")
+                if "fit_check_completed" not in line or "= True" not in line:
+                    continue
+                if path.name != "tailoring.py":
+                    offenders.append(f"{path}:{i}")
+        self.assertEqual(
+            offenders,
+            [],
+            "fit_check_completed is set outside the Fit Check tool that derives "
+            f"it ({offenders}). It must never become a value a caller supplies.",
+        )
+
+    def test_the_flag_is_not_a_tool_input_anywhere(self) -> None:
+        """A model-supplied fit_check_completed would be precisely the
+        self-report the derived-fact design exists to prevent."""
+        import app.tools  # noqa: F401
+        from app.enforcement import registry
+
+        for spec in registry._by_name.values():
+            props = (spec.input_schema or {}).get("properties", {}) or {}
+            self.assertNotIn(
+                "fit_check_completed", props,
+                f"{spec.id} ({spec.name}) accepts fit_check_completed as input.",
+            )
 
 
 if __name__ == "__main__":

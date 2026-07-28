@@ -104,8 +104,28 @@ def record_gap_acknowledgment(gap: str, reason: str, session: Session) -> None:
         },
         "required": ["jd_phrases", "resume_text"],
     },
+    needs_session=True,
 )
-def check_jd_phrase_coverage(jd_phrases: List[str], resume_text: str) -> ToolResult:
+def check_jd_phrase_coverage(jd_phrases: List[str], resume_text: str, session: Session) -> ToolResult:
+    """Also records that the Fit Check ran for this submission.
+
+    session.fit_check_completed is a DERIVED fact, never an assertion.
+    T-5.1 requires a Fit Check before Tailoring, every time; until
+    2026-07-28 nothing in the codebase ever set that flag to True, so
+    the gate could not be enforced without permanently blocking
+    Tailoring.
+
+    The obvious fix, a "record_fit_check_complete" tool the model
+    calls, is exactly the model self-report spec rule 4.1 refuses to
+    accept as enforcement: it would let the model claim a Fit Check it
+    never ran. Setting it here instead means the flag can only become
+    True as a side effect of the deterministic JD-to-resume comparison
+    actually executing. The model cannot assert the Fit Check happened.
+    It happens, and the harness notices.
+
+    ingest_job_description resets this to False on every new JD (see
+    T-6.1 below), so a stale pass cannot satisfy a later submission."""
+    session.fit_check_completed = True
     lowered_resume = resume_text.lower()
     missing = [phrase for phrase in jd_phrases if phrase.strip().lower() not in lowered_resume]
     findings = [
