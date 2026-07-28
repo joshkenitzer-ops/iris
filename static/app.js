@@ -109,10 +109,36 @@ function mountUserButton() {
 // ---------------------------------------------------------------------------
 
 async function apiFetch(path, options) {
+  /* Retries once on 401 with a force-refreshed token.
+
+     A Clerk session token lives 60 seconds, and getToken() serves a
+     CACHED token for that whole window rather than minting a new one
+     per call. So a token can come back with a second or two left on
+     it; add request latency and any clock drift between the browser
+     and the server, and it arrives expired. That is what produced the
+     live 401 on 2026-07-28 ("Signature has expired") on a request the
+     browser had only just asked Clerk for. At a 60-second TTL this is
+     a routine race, not a rare one, and the odds get worse the slower
+     the request.
+
+     skipCache forces Clerk to mint a fresh token instead of serving
+     the cached one, which is the documented way out of exactly this.
+     The retry lives here rather than in the chat path because every
+     authenticated call is exposed to it: uploads, downloads, the
+     session check at boot. One retry only. If a genuinely fresh token
+     is also rejected then the session really is gone, and the caller's
+     "your session expired, sign in again" is the honest answer. */
   options = options || {};
-  const token = await Clerk.session.getToken();
-  const headers = Object.assign({}, options.headers, { Authorization: "Bearer " + token });
-  return fetch(path, Object.assign({}, options, { headers: headers }));
+  const send = async function (forceFresh) {
+    const token = await Clerk.session.getToken(forceFresh ? { skipCache: true } : undefined);
+    const headers = Object.assign({}, options.headers, { Authorization: "Bearer " + token });
+    return fetch(path, Object.assign({}, options, { headers: headers }));
+  };
+  const response = await send(false);
+  if (response.status !== 401) {
+    return response;
+  }
+  return send(true);
 }
 
 async function withSessionRetry(makeRequest) {

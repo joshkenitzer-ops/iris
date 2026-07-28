@@ -18,7 +18,7 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.clerk_auth import ClerkAuthError, ClerkVerifier
+from app.clerk_auth import DEFAULT_LEEWAY_SECONDS, ClerkAuthError, ClerkVerifier
 
 ISSUER = "https://test-app.clerk.accounts.dev"
 KID = "test-key-1"
@@ -69,9 +69,14 @@ class TestClerkVerifier(unittest.TestCase):
         self.assertEqual(sub, "user_abc123")
 
     def test_expired_token_is_rejected(self) -> None:
-        token = self._make_token({"exp": int(time.time()) - 10})
+        """Well past the clock-skew leeway, so this asserts expiry is
+        enforced rather than merely that some number was exceeded. The
+        old version of this test used exp = now - 10, which sits INSIDE
+        the leeway added 2026-07-28 and would now pass verification."""
+        token = self._make_token({"exp": int(time.time()) - DEFAULT_LEEWAY_SECONDS - 60})
         with self.assertRaises(ClerkAuthError):
             self.verifier.verify(token)
+
 
     def test_wrong_issuer_is_rejected(self) -> None:
         token = self._make_token({"iss": "https://not-your-clerk-instance.example.com"})
@@ -185,6 +190,73 @@ class TestGetVerifierFailsClosed(unittest.TestCase):
             if original is not None:
                 os.environ["CLERK_ISSUER"] = original
             reset_verifier_for_testing()
+
+
+class TestClockSkewLeeway(unittest.TestCase):
+    """Added 2026-07-28 after a live 401: "Signature has expired" on a
+    request whose token the browser had just fetched. A Clerk session
+    token lives 60 seconds and getToken() serves it from cache for that
+    whole window, so a token can arrive with almost nothing left on it;
+    PyJWT's default leeway of 0 then rejects it on any drift at all.
+
+    The pair of tests below is the actual contract: tolerate skew,
+    still enforce expiry. Either one alone would be satisfied by a
+    broken implementation (leeway=0, or leeway=infinity)."""
+
+    def setUp(self) -> None:
+        self.private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.private_pem = _pem(self.private_key)
+        self.public_key = self.private_key.public_key()
+
+    def _verifier(self, leeway):
+        return ClerkVerifier(
+            ISSUER,
+            jwk_client_factory=lambda jwks_url: _FakeJWKClient(self.public_key),
+            leeway_seconds=leeway,
+        )
+
+    def _token(self, exp_offset):
+        now = int(time.time())
+        return jwt.encode(
+            {"sub": "user_abc123", "iss": ISSUER, "iat": now - 60, "exp": now + exp_offset},
+            self.private_pem,
+            algorithm="RS256",
+            headers={"kid": KID},
+        )
+
+    def test_a_token_just_inside_the_leeway_is_accepted(self) -> None:
+        """The live failure: expired by a few seconds of drift and
+        latency, on a token the browser had legitimately just been
+        handed."""
+        self.assertEqual(self._verifier(30).verify(self._token(-5)), "user_abc123")
+
+    def test_a_token_beyond_the_leeway_is_still_rejected(self) -> None:
+        """Leeway absorbs skew; it must not become an expiry bypass."""
+        with self.assertRaises(ClerkAuthError):
+            self._verifier(30).verify(self._token(-31))
+
+    def test_zero_leeway_reproduces_the_original_failure(self) -> None:
+        """Pins the cause. With leeway at PyJWT's default of 0, the
+        exact token that works above is rejected."""
+        with self.assertRaises(ClerkAuthError):
+            self._verifier(0).verify(self._token(-5))
+
+    def test_negative_leeway_is_refused_at_construction(self) -> None:
+        with self.assertRaises(ValueError):
+            self._verifier(-1)
+
+    def test_a_future_issued_at_within_leeway_is_accepted(self) -> None:
+        """Skew cuts both ways: a server clock running behind Clerk's
+        sees iat in the future, which PyJWT rejects at leeway 0 just as
+        readily as it rejects a stale exp."""
+        now = int(time.time())
+        token = jwt.encode(
+            {"sub": "user_abc123", "iss": ISSUER, "iat": now + 5, "exp": now + 300},
+            self.private_pem,
+            algorithm="RS256",
+            headers={"kid": KID},
+        )
+        self.assertEqual(self._verifier(30).verify(token), "user_abc123")
 
 
 if __name__ == "__main__":

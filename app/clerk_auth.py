@@ -48,6 +48,31 @@ from typing import Callable, List, Optional
 
 import jwt
 
+# Clock-skew tolerance when checking `exp` and `iat`, in seconds.
+#
+# Added 2026-07-28 after a live 401 mid-session: "Token verification
+# failed: Signature has expired" on a request the browser had just
+# minted a token for. PyJWT defaults leeway to 0, which is zero
+# tolerance, and a Clerk session token lives 60 seconds. Clerk's own
+# getToken() serves a cached token for up to that full TTL, so the
+# browser can hand back a token with a second or two left on it; add
+# request latency and any drift between Render's clock and Clerk's and
+# it is already expired on arrival. At a 60-second lifetime that is not
+# a rare race, it is a routine one, and it fires hardest on the slowest
+# requests. Clerk exposes an "Allowed Clock Skew" setting on its own
+# JWT templates for exactly this reason.
+#
+# The tradeoff, stated plainly because it is a real one: leeway extends
+# the window in which an already-expired token is still accepted, so a
+# captured token stays usable for this much longer than its stated
+# lifetime. 30 seconds is half the token's own TTL, comfortably above
+# realistic NTP drift plus request latency, and small enough that the
+# token remains genuinely short-lived. Do not raise this to "fix" an
+# auth problem that is not skew: the client-side retry in app.js
+# (apiFetch) is what handles a genuinely stale cached token, and a large
+# leeway here would only mask that.
+DEFAULT_LEEWAY_SECONDS = float(os.environ.get("CLERK_LEEWAY_SECONDS", "30"))
+
 
 class ClerkAuthError(Exception):
     """Any failure verifying a Clerk session token: bad signature,
@@ -71,11 +96,15 @@ class ClerkVerifier:
         issuer: str,
         authorized_parties: Optional[List[str]] = None,
         jwk_client_factory: Optional[Callable[[str], object]] = None,
+        leeway_seconds: float = DEFAULT_LEEWAY_SECONDS,
     ) -> None:
         if not issuer or not issuer.strip():
             raise ValueError("issuer is required and cannot be blank.")
+        if leeway_seconds < 0:
+            raise ValueError("leeway_seconds cannot be negative.")
         self._issuer = issuer.rstrip("/")
         self._authorized_parties = set(authorized_parties or [])
+        self._leeway_seconds = leeway_seconds
         factory = jwk_client_factory or (lambda jwks_url: jwt.PyJWKClient(jwks_url))
         self._jwk_client = factory(f"{self._issuer}/.well-known/jwks.json")
 
@@ -83,7 +112,10 @@ class ClerkVerifier:
         """Returns the verified Clerk user id (the `sub` claim) or
         raises ClerkAuthError. Signature, expiry, and issuer are
         always checked; authorized-party is checked only if
-        CLERK_AUTHORIZED_PARTIES was configured."""
+        CLERK_AUTHORIZED_PARTIES was configured.
+
+        Expiry is checked with a small clock-skew tolerance; see
+        DEFAULT_LEEWAY_SECONDS for why, and for what it costs."""
         try:
             signing_key = self._jwk_client.get_signing_key_from_jwt(token)
             claims = jwt.decode(
@@ -91,6 +123,7 @@ class ClerkVerifier:
                 signing_key.key,
                 algorithms=["RS256"],
                 issuer=self._issuer,
+                leeway=self._leeway_seconds,
                 options={"require": ["exp", "iat", "sub"]},
             )
         except jwt.PyJWTError as exc:
