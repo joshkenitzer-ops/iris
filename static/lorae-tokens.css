@@ -1,0 +1,321 @@
+/**
+ * Lorae Design Tokens
+ * github.com/joshkenitzer-ops/lorae
+ *
+ * Import this file into any Lorae tool UI.
+ * @import url('lorae-tokens.css');
+ *
+ * 2026-07-25: added the Iris amber block (was locked in the brand
+ * record but never made it into this file). Also added
+ * --lorae-purple-text and --lorae-amber-text: two accent colors in the
+ * original file failed WCAG AA when used as text/button-fill
+ * combinations. Both are additive fixes; nothing existing was
+ * removed, only .lorae-accent's color now points at a token that
+ * actually passes contrast on dark surfaces.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+
+  /* ── COLOR ── */
+
+  /* Core */
+  --lorae-black:         #0D0D0D;
+  --lorae-white:         #FFFFFF;
+  --lorae-purple:        #7B2FBE;
+  --lorae-purple-light:  #9B4FDE;
+  --lorae-purple-dim:    #3D1860;
+  --lorae-purple-ghost:  #1A0A2E;
+
+  /* 2026-07-25: --lorae-purple-light fails WCAG AA as text on dark
+     surfaces (3.78:1 on --lorae-surface-card, needs 4.5:1) even though
+     it's fine as a button-hover background with white text on top
+     (4.60:1). This token is for TEXT use specifically; --lorae-purple
+     and --lorae-purple-light are unchanged and still used for fills. */
+  --lorae-purple-text:   #A968E0;  /* 4.76:1 on surface-card, 5.32:1 on base */
+
+  /* Iris (formerly Hermes). Locked color was #B8860B; the -light,
+     -dim, -ghost tints and the shadow below are new, built to match
+     the same tonal ladder --lorae-purple already has. */
+  --lorae-amber:        #B8860B;
+  --lorae-amber-light:  #DAA520;
+  --lorae-amber-dim:    #4A3505;
+  --lorae-amber-ghost:  #1F1706;
+
+  /* White text on a solid amber or amber-light fill fails WCAG AA
+     (3.25:1 and 2.24:1). Near-black text on either passes with real
+     margin (5.97:1 and 8.68:1). Use this, not --lorae-white, for text
+     sitting on an amber background. */
+  --lorae-amber-text:   #0D0D0D;
+
+  /* Surface */
+  --lorae-surface-base:  #0D0D0D;
+  --lorae-surface-raised:#141414;
+  --lorae-surface-card:  #1A1A1A;
+  --lorae-surface-input: #111111;
+
+  /* Text */
+  --lorae-text-primary:  #FFFFFF;
+  --lorae-text-secondary:#A0A0A0;
+  --lorae-text-muted:    #5A5A5A;
+  --lorae-text-accent:   #9B4FDE;
+
+  /* Border */
+  --lorae-border:        #2A2A2A;
+  --lorae-border-accent: #7B2FBE;
+
+  /* Status */
+  --lorae-status-pass:   #1A7A45;
+  --lorae-status-pass-bg:#0D2B1A;
+  --lorae-status-warn:   #856404;
+  --lorae-status-warn-bg:#2B2000;
+  --lorae-status-fail:   #9B1C1C;
+  --lorae-status-fail-bg:#2B0A0A;
+  --lorae-status-info:   #1A4BAA;
+  --lorae-status-info-bg:#0A1A3A;
+
+  /* Severity (Cassandra) */
+  --lorae-severity-critical: #FF4444;
+  --lorae-severity-high:     #FF8800;
+  --lorae-severity-medium:   #FFCC00;
+  --lorae-severity-low:      #44AA44;
+  --lorae-severity-info:     #4488FF;
+
+
+  /* ── TYPOGRAPHY ── */
+
+  /* Families */
+  --lorae-font-display: 'Cinzel', Georgia, serif;
+  --lorae-font-body:    'Inter', system-ui, sans-serif;
+  --lorae-font-mono:    'IBM Plex Mono', 'Courier New', monospace;
+
+  /* Scale */
+  --lorae-text-xs:   0.75rem;   /* 12px — labels, captions */
+  --lorae-text-sm:   0.875rem;  /* 14px — secondary body */
+  --lorae-text-base: 1rem;      /* 16px — primary body */
+  --lorae-text-lg:   1.125rem;  /* 18px — lead text */
+  --lorae-text-xl:   1.25rem;   /* 20px — section headers */
+  --lorae-text-2xl:  1.5rem;    /* 24px — page headers */
+  --lorae-text-3xl:  2rem;      /* 32px — display */
+  --lorae-text-4xl:  2.5rem;    /* 40px — hero display */
+
+  /* Weight */
+  --lorae-weight-light:   300;
+  --lorae-weight-regular: 400;
+  --lorae-weight-medium:  500;
+  --lorae-weight-semibold:600;
+  --lorae-weight-bold:    700;
+
+  /* Line height */
+  --lorae-leading-tight:  1.2;
+  --lorae-leading-snug:   1.4;
+  --lorae-leading-normal: 1.6;
+  --lorae-leading-loose:  1.8;
+
+  /* Letter spacing */
+  --lorae-tracking-tight:  -0.02em;
+  --lorae-tracking-normal:  0em;
+  --lorae-tracking-wide:    0.05em;
+  --lorae-tracking-wider:   0.1em;
+  --lorae-tracking-widest:  0.2em;
+
+
+  /* ── SPACING ── */
+
+  --lorae-space-1:  0.25rem;   /* 4px */
+  --lorae-space-2:  0.5rem;    /* 8px */
+  --lorae-space-3:  0.75rem;   /* 12px */
+  --lorae-space-4:  1rem;      /* 16px */
+  --lorae-space-5:  1.25rem;   /* 20px */
+  --lorae-space-6:  1.5rem;    /* 24px */
+  --lorae-space-8:  2rem;      /* 32px */
+  --lorae-space-10: 2.5rem;    /* 40px */
+  --lorae-space-12: 3rem;      /* 48px */
+  --lorae-space-16: 4rem;      /* 64px */
+  --lorae-space-20: 5rem;      /* 80px */
+  --lorae-space-24: 6rem;      /* 96px */
+
+
+  /* ── LAYOUT ── */
+
+  --lorae-max-width:      1200px;
+  --lorae-content-width:  720px;
+  --lorae-sidebar-width:  280px;
+
+  --lorae-radius-sm:  4px;
+  --lorae-radius-md:  6px;
+  --lorae-radius-lg:  8px;
+  --lorae-radius-xl:  12px;
+  --lorae-radius-full: 9999px;
+
+
+  /* ── EFFECTS ── */
+
+  --lorae-shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+  --lorae-shadow-md:  0 4px 12px rgba(0,0,0,0.5);
+  --lorae-shadow-lg:  0 8px 24px rgba(0,0,0,0.6);
+  --lorae-shadow-purple: 0 0 24px rgba(123,47,190,0.3);
+  --lorae-shadow-amber:  0 0 24px rgba(184,134,11,0.35);
+
+  --lorae-rule: 1px solid #7B2FBE;
+  --lorae-rule-dim: 1px solid #2A2A2A;
+
+  --lorae-transition: 150ms ease;
+  --lorae-transition-slow: 300ms ease;
+}
+
+
+/* ── BASE RESETS ── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--lorae-black);
+  color: var(--lorae-text-primary);
+  font-family: var(--lorae-font-body);
+  font-size: var(--lorae-text-base);
+  line-height: var(--lorae-leading-normal);
+}
+
+
+/* ── UTILITY CLASSES ── */
+
+/* Typography */
+.lorae-display {
+  font-family: var(--lorae-font-display);
+  font-weight: var(--lorae-weight-bold);
+  letter-spacing: var(--lorae-tracking-wide);
+  color: var(--lorae-text-primary);
+}
+
+.lorae-label {
+  font-family: var(--lorae-font-body);
+  font-size: var(--lorae-text-xs);
+  font-weight: var(--lorae-weight-medium);
+  letter-spacing: var(--lorae-tracking-widest);
+  text-transform: uppercase;
+  color: var(--lorae-text-secondary);
+}
+
+.lorae-mono {
+  font-family: var(--lorae-font-mono);
+  font-size: var(--lorae-text-sm);
+  color: var(--lorae-text-primary);
+}
+
+.lorae-accent {
+  /* 2026-07-25: was --lorae-purple-light, which fails AA as text on
+     dark surfaces. --lorae-purple-text is built for this. */
+  color: var(--lorae-purple-text);
+}
+
+/* Rule — the signature element */
+.lorae-rule {
+  border: none;
+  border-top: var(--lorae-rule);
+  margin: var(--lorae-space-8) 0;
+}
+
+.lorae-rule-dim {
+  border: none;
+  border-top: var(--lorae-rule-dim);
+  margin: var(--lorae-space-6) 0;
+}
+
+/* Cards */
+.lorae-card {
+  background: var(--lorae-surface-card);
+  border: 1px solid var(--lorae-border);
+  border-radius: var(--lorae-radius-lg);
+  padding: var(--lorae-space-6);
+}
+
+.lorae-card:hover {
+  border-color: var(--lorae-border-accent);
+  box-shadow: var(--lorae-shadow-purple);
+  transition: var(--lorae-transition);
+}
+
+/* Buttons */
+.lorae-btn-primary {
+  background: var(--lorae-purple);
+  color: var(--lorae-white);
+  font-family: var(--lorae-font-body);
+  font-size: var(--lorae-text-sm);
+  font-weight: var(--lorae-weight-medium);
+  padding: var(--lorae-space-3) var(--lorae-space-6);
+  border: none;
+  border-radius: var(--lorae-radius-md);
+  cursor: pointer;
+  transition: var(--lorae-transition);
+}
+
+.lorae-btn-primary:hover {
+  background: var(--lorae-purple-light);
+}
+
+.lorae-btn-ghost {
+  background: transparent;
+  color: var(--lorae-text-secondary);
+  font-family: var(--lorae-font-body);
+  font-size: var(--lorae-text-sm);
+  font-weight: var(--lorae-weight-medium);
+  padding: var(--lorae-space-3) var(--lorae-space-6);
+  border: 1px solid var(--lorae-border);
+  border-radius: var(--lorae-radius-md);
+  cursor: pointer;
+  transition: var(--lorae-transition);
+}
+
+.lorae-btn-ghost:hover {
+  border-color: var(--lorae-purple);
+  color: var(--lorae-white);
+}
+
+/* Input */
+.lorae-input {
+  background: var(--lorae-surface-input);
+  color: var(--lorae-text-primary);
+  font-family: var(--lorae-font-body);
+  font-size: var(--lorae-text-base);
+  padding: var(--lorae-space-3) var(--lorae-space-4);
+  border: 1px solid var(--lorae-border);
+  border-radius: var(--lorae-radius-md);
+  width: 100%;
+  outline: none;
+  transition: var(--lorae-transition);
+}
+
+.lorae-input:focus {
+  border-color: var(--lorae-purple);
+  box-shadow: 0 0 0 2px rgba(123,47,190,0.2);
+}
+
+/* Severity badges (Cassandra) */
+.lorae-badge {
+  display: inline-block;
+  font-family: var(--lorae-font-mono);
+  font-size: var(--lorae-text-xs);
+  font-weight: var(--lorae-weight-medium);
+  letter-spacing: var(--lorae-tracking-wide);
+  text-transform: uppercase;
+  padding: 2px var(--lorae-space-2);
+  border-radius: var(--lorae-radius-sm);
+}
+
+.lorae-badge-critical { color: var(--lorae-severity-critical); background: rgba(255,68,68,0.1); }
+.lorae-badge-high     { color: var(--lorae-severity-high);     background: rgba(255,136,0,0.1); }
+.lorae-badge-medium   { color: var(--lorae-severity-medium);   background: rgba(255,204,0,0.1); }
+.lorae-badge-low      { color: var(--lorae-severity-low);      background: rgba(68,170,68,0.1); }
+.lorae-badge-info     { color: var(--lorae-severity-info);     background: rgba(68,136,255,0.1); }

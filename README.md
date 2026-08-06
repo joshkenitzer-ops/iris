@@ -2,7 +2,7 @@
 
 Job seeker pipeline. Takes a user from raw career history to a tailored, verified, ATS-compliant resume and cover letter pair, in one guided flow.
 
-Part of the [Lore](https://github.com/joshkenitzer-ops) tool suite. Accent color Amber `#B8860B`.
+Part of the [Lorae](https://github.com/joshkenitzer-ops) tool suite. Accent color Amber `#B8860B`.
 
 Formerly Hermes. Renamed 2026-07-21 after a naming collision with commercial "Hermes AI" agent products. References to Hermes persist in git history and in the archived spec line; they refer to this project.
 
@@ -136,7 +136,7 @@ The document a user builds once and tailors many times is the **foundational res
 
 ## Related
 
-- `lore` repository: brand tokens (`lore-tokens.css`), three-tier token architecture, `MANIFESTO.md`
+- `lorae` repository: brand tokens (`lorae-tokens.css`), three-tier token architecture, `MANIFESTO.md`
 - `janus` repository: persistent context and session handoff
 - `cassandra` repository: adversarial review
 - `hermes` repository: deprecated. Original application architecture, kept for history.

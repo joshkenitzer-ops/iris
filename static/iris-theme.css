@@ -2,51 +2,51 @@
  * Iris Theme Override
  * github.com/joshkenitzer-ops/iris
  *
- * Load AFTER lore-tokens.css:
- *   <link rel="stylesheet" href="lore-tokens.css">
+ * Load AFTER lorae-tokens.css:
+ *   <link rel="stylesheet" href="lorae-tokens.css">
  *   <link rel="stylesheet" href="iris-theme.css">
  *
- * lore-tokens.css's component classes (.lore-card, .lore-btn-primary,
- * .lore-input, .lore-accent, ...) hardcode Tyrian Purple directly —
+ * lorae-tokens.css's component classes (.lorae-card, .lorae-btn-primary,
+ * .lorae-input, .lorae-accent, ...) hardcode Tyrian Purple directly —
  * there's no swappable "accent" indirection in the shared file, by
- * design, since every other Lore tool uses the universal purple as-is.
+ * design, since every other Lorae tool uses the universal purple as-is.
  * Iris is the first tool with its own color, so rather than add a
  * generic theming mechanism to the shared file (bigger change than
  * this needed), this file re-declares just the handful of rules that
  * reference purple, scoped to Iris's own pages. Every other tool
- * importing the unmodified lore-tokens.css is unaffected.
+ * importing the unmodified lorae-tokens.css is unaffected.
  *
  * Contrast-checked 2026-07-25 against WCAG AA (4.5:1 text, 3:1
- * non-text): see lore-tokens.css's --lore-amber-text for why button
+ * non-text): see lorae-tokens.css's --lorae-amber-text for why button
  * text below is near-black, not white.
  */
 
-.lore-card:hover {
-  border-color: var(--lore-amber);
-  box-shadow: var(--lore-shadow-amber);
+.lorae-card:hover {
+  border-color: var(--lorae-amber);
+  box-shadow: var(--lorae-shadow-amber);
 }
 
-.lore-btn-primary {
-  background: var(--lore-amber);
-  color: var(--lore-amber-text);
+.lorae-btn-primary {
+  background: var(--lorae-amber);
+  color: var(--lorae-amber-text);
 }
 
-.lore-btn-primary:hover {
-  background: var(--lore-amber-light);
-  /* color inherited from .lore-btn-primary; --lore-amber-text passes
+.lorae-btn-primary:hover {
+  background: var(--lorae-amber-light);
+  /* color inherited from .lorae-btn-primary; --lorae-amber-text passes
      against amber-light too (8.68:1) */
 }
 
-.lore-btn-ghost:hover {
-  border-color: var(--lore-amber);
-  color: var(--lore-white);
+.lorae-btn-ghost:hover {
+  border-color: var(--lorae-amber);
+  color: var(--lorae-white);
 }
 
-.lore-input:focus {
-  border-color: var(--lore-amber);
+.lorae-input:focus {
+  border-color: var(--lorae-amber);
   box-shadow: 0 0 0 2px rgba(184,134,11,0.25);
 }
 
-.lore-accent {
-  color: var(--lore-amber-light);
+.lorae-accent {
+  color: var(--lorae-amber-light);
 }

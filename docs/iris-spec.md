@@ -32,7 +32,7 @@ This protocol exists because the failure it prevents already happened: decisions
 
 ## 1. Purpose
 
-Iris is Lore's job seeker pipeline. It takes a user from raw career history to a polished, ATS-compliant, tailored application package, resume and cover letter alike, in a single guided experience. The pipeline is self-contained: users never need to leave the app or use another tool.
+Iris is Lorae's job seeker pipeline. It takes a user from raw career history to a polished, ATS-compliant, tailored application package, resume and cover letter alike, in a single guided experience. The pipeline is self-contained: users never need to leave the app or use another tool.
 
 The myth is exact. Iris is the messenger goddess who moves between worlds. The product moves job seekers from where they are to where they need to be.
 
@@ -51,7 +51,7 @@ Iris addresses all four. The foundational resume is built once. Every applicatio
 
 ## 3. Design Principles
 
-1. **Standalone.** Iris does not depend on or redirect to any other Lore tool, and does not call one at runtime.
+1. **Standalone.** Iris does not depend on or redirect to any other Lorae tool, and does not call one at runtime.
 2. **Self-contained quality.** Every review, audit, and check runs inside Iris.
 3. **Human in the loop.** The user drives decisions. Iris automates execution and surfaces findings. The user reviews and approves at each stage.
 4. **Foundational first.** The foundational resume is built once and tailored many times. Every application starts from a verified source of truth.
@@ -346,7 +346,7 @@ Three tiers run on the completed pair before delivery. Every check expressible i
 
 **7.6** Multiple concurrent users are assumed from V1. User data enters model context only through a tool call scoped by authenticated identity. Two users' data are never placed in one context with an instruction to keep them apart.
 
-**7.7** Output documents carry no Lore branding and no Iris state. They are the user's documents, ready to submit without modification.
+**7.7** Output documents carry no Lorae branding and no Iris state. They are the user's documents, ready to submit without modification.
 
 ## 8. Output
 
@@ -391,13 +391,13 @@ All fourteen are buildable as of 2026-07-23. The per-bullet word limit was state
 
 **Out of scope, by decision rather than omission.** Onscreen editor: users edit in their own word processor. New-graduate and no-career-history onboarding: needs dedicated research before it can be specced.
 
-## 11. Relationship to the Lore Suite
+## 11. Relationship to the Lorae Suite
 
-Iris is a standalone product. It does not call Cassandra, Vulcan, or any other Lore tool at runtime. Its audit and review logic is purpose-built for resume and job application work, and the Locked Facts Registry and Fit Check logic are internal.
+Iris is a standalone product. It does not call Cassandra, Vulcan, or any other Lorae tool at runtime. Its audit and review logic is purpose-built for resume and job application work, and the Locked Facts Registry and Fit Check logic are internal.
 
 The three-tier Phase 8 verification pipeline, the Fit Check phase, and the honest-gap cover letter standard originate in the owner's own application workflow and are generalized here for all users.
 
-Design-time review of this spec by another Lore tool is not a runtime dependency and does not conflict with this section.
+Design-time review of this spec by another Lorae tool is not a runtime dependency and does not conflict with this section.
 
 ---
 
@@ -467,7 +467,7 @@ The one-to-two-page target for tailored resumes is retained, grounded in resume 
 
 ## 2026-07-23: Reconciliation against v0.9
 
-v0.9 located after this spec was drafted. Corrections applied: fourteen EARS requirements rather than twelve, adding cover letter word-count bounds and plain-text extraction failure as Critical; CONTACT includes location; the plain-text extraction check belongs to the Team Lead pass at Critical severity rather than Phase 4; cover letter paragraph three is company alignment carrying the gap, not a standalone gap paragraph; the locked closing line's exact text recorded; Core Capability and Relationship to the Lore Suite restored.
+v0.9 located after this spec was drafted. Corrections applied: fourteen EARS requirements rather than twelve, adding cover letter word-count bounds and plain-text extraction failure as Critical; CONTACT includes location; the plain-text extraction check belongs to the Team Lead pass at Critical severity rather than Phase 4; cover letter paragraph three is company alignment carrying the gap, not a standalone gap paragraph; the locked closing line's exact text recorded; Core Capability and Relationship to the Lorae Suite restored.
 
 Four decisions of 2026-07-23 supersede v0.9 as later and deliberate: tailored filenames drop the date, the per-bullet word limit is fixed rather than configured, careerInventory sections take required/optional flags rather than a fixed nine, and gap acknowledgment is a gate. All four of v0.9's open questions are now closed.
 
@@ -570,7 +570,7 @@ A reachability guard added this day (`tests/test_reachability_guard.py`) turned 
 ## Open items
 
 - **Two of six service names.** v0.9 names `buildService`, `tailorService`, and `docxService`; the handoff adds `reviewService`. Two remain unnamed, as does the mapping of nine phases onto six services.
-- **Lore palette tokens**, locked as of 2026-07-03, must be read before any Iris UI work begins.
+- **Lorae palette tokens**, locked as of 2026-07-03, must be read before any Iris UI work begins.
 - **Required section set.** Proposed: NAME, CONTACT, EXPERIENCE. Not yet confirmed.
 - **Locked closing line under product scope.** Locking exact wording was decided when Iris was a personal tool. A single house closing line across all users is defensible but was never decided as a product rule.
 - **Default banned vocabulary list** is inherited from v0.1 and has not been reviewed since. Two entries ("effectively", "directly") are common enough in ordinary prose to be worth revisiting.

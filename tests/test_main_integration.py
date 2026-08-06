@@ -237,7 +237,7 @@ class TestFrontendServing(_ClientTestCase):
         self.assertIn("Iris", response.text)
 
     def test_static_assets_are_reachable_without_auth(self) -> None:
-        for path in ("/static/app.js", "/static/iris-app.css", "/static/lore-tokens.css", "/static/iris-theme.css"):
+        for path in ("/static/app.js", "/static/iris-app.css", "/static/lorae-tokens.css", "/static/iris-theme.css"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
 

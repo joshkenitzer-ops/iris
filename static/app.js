@@ -739,7 +739,7 @@ function appendDownloadButton(fileId, filename) {
   label.textContent = filename;
 
   const btn = document.createElement("button");
-  btn.className = "lore-btn-primary download-btn";
+  btn.className = "lorae-btn-primary download-btn";
   btn.textContent = "Download";
   btn.type = "button";
 
