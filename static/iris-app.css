@@ -111,31 +111,19 @@ body {
   gap: var(--lorae-space-2);
 }
 
-/* 2026-08-06: lorae-logo.png added alongside the text mark. Earlier
+/* 2026-08-06: lorae-logo.png replaces the old text-only mark. Earlier
    attempts at an image mark here were reverted because the source PNG
    had a baked-in opaque background (showed as a dark box) and was the
    full lockup with tagline, too much for a header corner. This asset
    is different: a genuinely transparent circular seal (alpha 0 at
-   every corner, confirmed against the file directly), so it reads as
-   a small compact mark rather than a dark box or an illegible full
-   lockup at header-corner scale. Kept alongside the text mark rather
-   than replacing it, since the seal's own wordmark is unreadable
-   below its full size. */
+   every corner, confirmed against the file directly). First shipped
+   at 22px next to the text mark and reported unreadable at that size;
+   sized up to 40px and the text mark dropped, since a mark that size
+   made the text redundant rather than reinforcing it. */
 .lorae-mark-img {
-  width: 22px;
-  height: 22px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-}
-
-.lorae-mark {
-  font-family: var(--lorae-font-display);
-  font-size: var(--lorae-text-sm);
-  font-weight: var(--lorae-weight-semibold);
-  letter-spacing: var(--lorae-tracking-widest);
-  text-transform: uppercase;
-  color: var(--lorae-text-secondary);
-  padding-bottom: 3px;
-  border-bottom: 2px solid var(--lorae-purple);
 }
 
 .app-wordmark {
