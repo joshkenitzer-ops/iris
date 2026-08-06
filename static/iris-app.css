@@ -117,11 +117,11 @@ body {
    full lockup with tagline, too much for a header corner. This asset
    is different: a genuinely transparent circular seal (alpha 0 at
    every corner, confirmed against the file directly), no tagline
-   baked in. Went through two rounds of "too small to read" (22px,
-   then the wrong file at 40px) before landing here at 56px. */
+   baked in. Went through three rounds of "too small to read" (22px,
+   the wrong file at 40px, then 56px) before landing here at 96px. */
 .lorae-mark-img {
-  width: 56px;
-  height: 56px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
 }
 
