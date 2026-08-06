@@ -116,13 +116,12 @@ body {
    had a baked-in opaque background (showed as a dark box) and was the
    full lockup with tagline, too much for a header corner. This asset
    is different: a genuinely transparent circular seal (alpha 0 at
-   every corner, confirmed against the file directly). First shipped
-   at 22px next to the text mark and reported unreadable at that size;
-   sized up to 40px and the text mark dropped, since a mark that size
-   made the text redundant rather than reinforcing it. */
+   every corner, confirmed against the file directly), no tagline
+   baked in. Went through two rounds of "too small to read" (22px,
+   then the wrong file at 40px) before landing here at 56px. */
 .lorae-mark-img {
-  width: 40px;
-  height: 40px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
 }
 
