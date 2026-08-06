@@ -106,15 +106,27 @@ body {
 
 .header-brand {
   justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: var(--lorae-space-2);
 }
 
-/* The Lorae mark, rebuilt as live text rather than an image: the
-   source PNG had a baked-in opaque background (would show as a dark
-   box on the page) and was the full lockup with tagline, too much for
-   a header corner. Cinzel with wide tracking and a purple underline
-   reproduces the same idea, a serif wordmark over a rule, at
-   whatever size and theme this page needs, with no asset to load. A
-   real SVG can replace this later without touching any other file. */
+/* 2026-08-06: lorae-logo.png added alongside the text mark. Earlier
+   attempts at an image mark here were reverted because the source PNG
+   had a baked-in opaque background (showed as a dark box) and was the
+   full lockup with tagline, too much for a header corner. This asset
+   is different: a genuinely transparent circular seal (alpha 0 at
+   every corner, confirmed against the file directly), so it reads as
+   a small compact mark rather than a dark box or an illegible full
+   lockup at header-corner scale. Kept alongside the text mark rather
+   than replacing it, since the seal's own wordmark is unreadable
+   below its full size. */
+.lorae-mark-img {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
 .lorae-mark {
   font-family: var(--lorae-font-display);
   font-size: var(--lorae-text-sm);
