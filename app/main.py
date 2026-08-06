@@ -29,6 +29,7 @@ import base64
 import json
 import logging
 import os
+import re
 import queue
 import threading
 import time
@@ -185,9 +186,50 @@ def _render_index() -> str:
                 "real values via environment variables, never in the file."
             )
 
-    return template.replace(_CLERK_HOST_TOKEN, _clerk_frontend_host()).replace(
+    rendered = template.replace(_CLERK_HOST_TOKEN, _clerk_frontend_host()).replace(
         _CLERK_KEY_TOKEN, os.environ.get("CLERK_PUBLISHABLE_KEY", "").strip()
     )
+    # Cache-busting for the static CSS/JS links. Added 2026-07-28 after
+    # the Lore->Lorae rename shipped a real incident: renaming CSS
+    # custom properties (--lore-* -> --lorae-*) across lorae-tokens.css
+    # and iris-app.css/iris-theme.css together is safe on disk, since
+    # the files always agree with each other, but a browser that had
+    # ALREADY cached the old iris-app.css keeps using var(--lore-*)
+    # references against a freshly-fetched lorae-tokens.css that only
+    # defines --lorae-*. The old names resolve to nothing and the
+    # accent colors silently vanish. No code bug, pure stale-cache
+    # skew between two files that must always be fetched as a pair.
+    #
+    # A content hash of the three static assets, appended as a query
+    # string, forces exactly the pair of files in this build to be
+    # fetched together: any future edit changes the hash, which changes
+    # the URL, which a cache has never seen. Computed once at process
+    # start next to _index_cache, not per request, for the same reason
+    # _render_index()'s own result is cached.
+    return re.sub(
+        r'(href="/static/(?:lorae-tokens|iris-theme|iris-app)\.css")',
+        lambda m: m.group(1)[:-1] + f'?v={_static_asset_version()}"',
+        rendered,
+    )
+
+
+_static_asset_version_cache: Optional[str] = None
+
+
+def _static_asset_version() -> str:
+    """Short hash of the three CSS files' combined contents, used as a
+    cache-busting query param. Computed once per process and cached,
+    matching _render_index(): these files cannot change while the
+    process runs."""
+    global _static_asset_version_cache
+    if _static_asset_version_cache is None:
+        import hashlib
+
+        h = hashlib.sha256()
+        for name in ("lorae-tokens.css", "iris-theme.css", "iris-app.css"):
+            h.update((STATIC_DIR / name).read_bytes())
+        _static_asset_version_cache = h.hexdigest()[:10]
+    return _static_asset_version_cache
 
 
 @asynccontextmanager
